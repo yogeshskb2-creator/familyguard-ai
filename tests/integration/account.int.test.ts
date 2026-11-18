@@ -80,8 +80,9 @@ describe("account deletion", () => {
     expect((await adminDb().collection("geofences").get()).docs[0]!.get("createdBy")).toBeNull(); // …unlinked from Ann
   });
 
-  it("deletes families where nobody else was a member", async () => {
+  it("deletes families where nobody else was a member, including their activity log", async () => {
     expect(await exists(`families/${solo}`)).toBe(false);
+    expect(await count(adminDb().collection(`families/${solo}/events`))).toBe(0);
   });
 
   it("deletes Ann's SOS alerts and her acknowledgements of others' alerts", async () => {

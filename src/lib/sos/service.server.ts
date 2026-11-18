@@ -2,6 +2,7 @@ import "server-only";
 import { FieldValue, Timestamp, type DocumentData } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import type { SessionUser } from "@/lib/auth/session";
+import { isMissingIndexError } from "@/lib/firestore/indexes";
 import { FamilyError } from "@/lib/families/errors";
 import { queueFamilyEvent } from "@/lib/families/events.server";
 import { PushOutbox } from "@/lib/notifications/push.server";
@@ -235,11 +236,22 @@ export async function resolveSos(user: SessionUser, alertId: string, outcome: "r
  */
 export async function listSosForUser(uid: string, limit = 50): Promise<SosView[]> {
   const me = await myProfile(uid);
-  const queries = [alerts().where("uid", "==", uid).orderBy("createdAt", "desc").limit(limit).get()];
-  if (me.familyIds.length) {
-    queries.push(alerts().where("familyIds", "array-contains-any", me.familyIds.slice(0, 30)).orderBy("createdAt", "desc").limit(limit).get());
+  const families = me.familyIds.slice(0, 30);
+  const own = alerts().where("uid", "==", uid);
+  const shared = families.length ? alerts().where("familyIds", "array-contains-any", families) : null;
+  let snaps;
+  try {
+    // Fast path: newest first, served by the composite indexes in firestore.indexes.json.
+    snaps = await Promise.all(
+      [own, shared].filter((q) => q !== null).map((q) => q.orderBy("createdAt", "desc").limit(limit).get()),
+    );
+  } catch (e) {
+    if (!isMissingIndexError(e)) throw e;
+    // Indexes not deployed/built yet: plain filters need none. Read a bounded
+    // set and sort here; per-user and per-family alert counts are small.
+    console.warn("[sos] composite index missing; using unsorted fallback query");
+    snaps = await Promise.all([own, shared].filter((q) => q !== null).map((q) => q.limit(FALLBACK_SCAN).get()));
   }
-  const snaps = await Promise.all(queries);
   const seen = new Set<string>();
   return snaps
     .flatMap((s) => s.docs)
@@ -248,6 +260,9 @@ export async function listSosForUser(uid: string, limit = 50): Promise<SosView[]
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
 }
+
+/** Upper bound on alerts read per query when the sorted index is unavailable. */
+const FALLBACK_SCAN = 500;
 
 export async function getSosForUser(uid: string, alertId: string): Promise<SosView> {
   const me = await myProfile(uid);

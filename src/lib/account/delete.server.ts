@@ -86,10 +86,19 @@ export async function deleteAccount(user: SessionUser, ip?: string | null): Prom
   await deleteMyHistory(uid);
 
   // 2. Families: leave, hand over ownership, or delete when no one else is left.
+  const keptFamilies: string[] = [];
+  const deletedFamilies: string[] = [];
   for (const f of await listMyFamilies(uid)) {
-    if (f.myRole !== "owner") await removeMember(user, f.id, uid);
-    else if (f.members.length > 1) await transferOwnershipAndLeave(f.id, uid, displayName);
-    else await deleteFamily(user, f.id);
+    if (f.myRole !== "owner") {
+      await removeMember(user, f.id, uid);
+      keptFamilies.push(f.id);
+    } else if (f.members.length > 1) {
+      await transferOwnershipAndLeave(f.id, uid, displayName);
+      keptFamilies.push(f.id);
+    } else {
+      await deleteFamily(user, f.id);
+      deletedFamilies.push(f.id);
+    }
   }
 
   // Steps 3–7 touch disjoint data, so they run in parallel (fewer round trips).
@@ -126,8 +135,11 @@ export async function deleteAccount(user: SessionUser, ip?: string | null): Prom
         }),
       );
     })(),
-    // 5. Family activity entries about the user.
-    deleteAll(db().collectionGroup("events").where("uid", "==", uid)),
+    // 5. Family activity: entries about the user in families that live on, and
+    //    the whole activity log of families that were deleted with her.
+    //    (Per family, so no collection-group index is needed.)
+    ...keptFamilies.map((id) => deleteAll(db().collection(`families/${id}/events`).where("uid", "==", uid))),
+    ...deletedFamilies.map((id) => deleteAll(db().collection(`families/${id}/events`))),
     // 6. Safe zones they created stay with the family, without the link to them.
     (async () => {
       const zones = await db().collection("geofences").where("createdBy", "==", uid).get();

@@ -1,5 +1,6 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
+import { isMissingIndexError } from "@/lib/firestore/indexes";
 import { configuredProviders } from "@/lib/ai/providers.server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import { SECURITY_EVENT_LABEL, type SecurityEventType } from "@/lib/security/events.server";
@@ -13,6 +14,16 @@ import type { NotificationKind } from "@/types/models";
 
 const db = () => adminDb();
 const count = async (q: FirebaseFirestore.Query) => (await q.count().get()).data().count;
+/** Notification counts span every user's inbox (collection-group indexes); tolerate them missing. */
+async function groupCount(q: FirebaseFirestore.Query, onMissing: () => void): Promise<number> {
+  try {
+    return await count(q);
+  } catch (e) {
+    if (!isMissingIndexError(e)) throw e;
+    onMissing();
+    return 0;
+  }
+}
 const since = (ms: number) => Timestamp.fromMillis(Date.now() - ms);
 const DAY = 24 * 60 * 60 * 1000;
 const NOTIFICATION_KINDS: NotificationKind[] = ["sos", "geofence_enter", "geofence_exit", "invitation", "sharing_started", "sharing_stopped", "device"];
@@ -94,6 +105,10 @@ async function healthChecks(): Promise<HealthCheck[]> {
 
 export async function getAdminStats(): Promise<AdminStats> {
   const items = db().collectionGroup("items");
+  let notificationIndexMissing = false;
+  const indexMissing = () => {
+    notificationIndexMissing = true;
+  };
   const [
     usersTotal,
     usersNew,
@@ -122,8 +137,8 @@ export async function getAdminStats(): Promise<AdminStats> {
     count(db().collection("emergencyAlerts").where("status", "==", "active")),
     count(db().collection("emergencyAlerts").where("createdAt", ">=", since(30 * DAY))),
     count(db().collection("geofences")),
-    count(items.where("createdAt", ">=", since(7 * DAY))),
-    Promise.all(NOTIFICATION_KINDS.map(async (kind) => ({ kind, count: await count(items.where("kind", "==", kind).where("createdAt", ">=", since(7 * DAY))) }))),
+    groupCount(items.where("createdAt", ">=", since(7 * DAY)), indexMissing),
+    Promise.all(NOTIFICATION_KINDS.map(async (kind) => ({ kind, count: await groupCount(items.where("kind", "==", kind).where("createdAt", ">=", since(7 * DAY)), indexMissing) }))),
     db().collection("securityEvents").where("at", ">=", since(7 * DAY)).orderBy("at", "desc").limit(1000).get(),
     healthChecks(),
   ]);
@@ -158,6 +173,15 @@ export async function getAdminStats(): Promise<AdminStats> {
       byType: [...byType.entries()].map(([type, c]) => ({ type, label: SECURITY_EVENT_LABEL[type] ?? type, count: c })).sort((a, b) => b.count - a.count),
       recent: events.slice(0, 15).map((e) => ({ ...e, label: SECURITY_EVENT_LABEL[e.type] ?? e.type })),
     },
-    health,
+    health: notificationIndexMissing
+      ? [
+          ...health,
+          {
+            name: "Firestore indexes",
+            status: "warn",
+            detail: "missing or still building — notification statistics show 0 until they are ready",
+          },
+        ]
+      : health,
   };
 }
