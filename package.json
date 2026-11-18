@@ -58,7 +58,8 @@
     "vitest": "^5.1.0"
   },
   "overrides": {
-    "@grpc/grpc-js": "^1.14.0",
-    "postcss": "$postcss"
+    "jwks-rsa": {
+      "jose": "5.10.0"
+    }
   }
 }
