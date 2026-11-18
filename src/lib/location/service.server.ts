@@ -191,7 +191,11 @@ export async function recordLocation(user: SessionUser, fix: LocationUpdate): Pr
   if (!isFreshFix(fix.timestamp, now)) throw new FamilyError(422, "stale_fix", "Location fix is too old or from the future.");
 
   const outbox = new PushOutbox();
-  await db().runTransaction(async (tx) => {
+  // The view is built from exactly what this transaction wrote. Re-reading the
+  // document after commit is racy: if sharing is stopped (another tab, account
+  // deletion, leaving the last family) in between, the document is already
+  // deleted and the re-read returns nothing.
+  const view = await db().runTransaction(async (tx): Promise<LiveLocationView> => {
     outbox.reset();
     const { familyIds, consent, snap: userSnap } = await myFamilyIds(tx, user.uid);
     if (!consent.active) throw new FamilyError(409, "not_sharing", "Location sharing is off.");
@@ -242,11 +246,14 @@ export async function recordLocation(user: SessionUser, fix: LocationUpdate): Pr
         expireAt: Timestamp.fromMillis(now + consent.historyRetentionDays * DAY),
       });
     }
+    return toView(data, now);
   });
 
   await outbox.flush();
-  await pruneExpiredHistory(user.uid, now);
-  return toView((await locRef(user.uid).get()).data()!, now);
+  // Housekeeping only: the fix is already stored, so a failed prune must not
+  // turn a successful update into an error for the client.
+  await pruneExpiredHistory(user.uid, now).catch((err) => console.error("[location] history prune failed", err));
+  return view;
 }
 
 // ── History (owner only) ───────────────────────────────────
@@ -319,7 +326,7 @@ export async function countSharingWithMe(uid: string): Promise<{ sharing: number
   let online = 0;
   for (const s of snaps) {
     const d = s.data();
-    if (!d || !(d.sharedWith as string[]).some((f) => myFamilyIds.has(f))) continue;
+    if (!d || !((d.sharedWith as string[] | undefined) ?? []).some((f) => myFamilyIds.has(f))) continue;
     sharing++;
     if (presence(ms(d.updatedAt), now) === "online") online++;
   }
