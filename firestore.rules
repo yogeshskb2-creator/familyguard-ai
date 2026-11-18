@@ -1,0 +1,153 @@
+rules_version = '2';
+
+// FamilyGuard AI — Firestore Security Rules
+//
+// Firestore denies anything not explicitly allowed below. Collection rules are
+// added phase by phase; a collection with no `match` block is unreachable from
+// clients. The Admin SDK (server) bypasses these rules and performs its own
+// authorization checks.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ─────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function family(familyId) {
+      return get(/databases/$(database)/documents/families/$(familyId)).data;
+    }
+    function isFamilyManager(familyId) {
+      return family(familyId).members[request.auth.uid].role in ['owner', 'guardian'];
+    }
+    function myFamilyIds() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyIds;
+    }
+    function validDisplayName(n) {
+      return n is string && n.size() >= 2 && n.size() <= 60 && !n.matches('.*[<>{}\\\\].*');
+    }
+
+    // ── users/{uid} ─────────────────────────────────────────
+    // Created by the server on first sign-in. Owners may edit ONLY their
+    // display name and AI preference. uid, email, familyIds and any role or
+    // admin flag can never be written by a client (privilege escalation).
+    // Admin rights come from an Auth custom claim, not from this document.
+    match /users/{uid} {
+      allow get: if isSelf(uid);
+      allow list: if false;
+      allow create, delete: if false;
+      allow update: if isSelf(uid)
+        && onlyChanges(['displayName', 'aiProvider', 'updatedAt'])
+        && validDisplayName(request.resource.data.displayName)
+        && request.resource.data.aiProvider in ['claude', 'openai', 'gemini']
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    // ── families/{familyId} ─────────────────────────────────
+    // Readable only by current members (checked against the LIVE memberIds,
+    // so a removed member loses access immediately). Queries must filter
+    // with `memberIds array-contains <uid>`. All writes go through the
+    // server, which enforces roles in transactions — clients write nothing.
+    match /families/{familyId} {
+      allow get, list: if signedIn() && request.auth.uid in resource.data.memberIds;
+      allow write: if false;
+    }
+
+    // ── familyInvitations/{inviteId} ────────────────────────
+    // Visible to the invitee — matched on a VERIFIED email or on the phone
+    // number proven by SMS sign-in — and to the family's owner/guardians.
+    // Accept/reject/revoke happen server-side only.
+    match /familyInvitations/{inviteId} {
+      allow get, list: if signedIn() && (
+        (request.auth.token.get('email_verified', false) == true
+          && resource.data.inviteeEmail == request.auth.token.get('email', ''))
+        || (request.auth.token.get('phone_number', null) != null
+          && resource.data.inviteePhone == request.auth.token.get('phone_number', null))
+        || isFamilyManager(resource.data.familyId)
+      );
+      allow write: if false;
+    }
+
+    // ── locations/{uid} ─────────────────────────────────────
+    // Latest fix. Exists only while its owner is sharing (deleted on stop).
+    // Readable by the owner, and by a signed-in user who CURRENTLY belongs
+    // to one of the families the owner chose (`sharedWith`). Membership is
+    // read live from the viewer's server-maintained profile, so leaving or
+    // being removed revokes access immediately. Writes are server-only: the
+    // server checks consent in the same transaction as each write.
+    match /locations/{uid} {
+      allow get: if isSelf(uid)
+        || (signedIn() && resource.data.sharedWith.hasAny(myFamilyIds()));
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // ── locationHistory/{uid}/points/{pointId} ──────────────
+    // Opt-in history. Only the owner can ever read it.
+    match /locationHistory/{uid}/points/{pointId} {
+      allow read: if isSelf(uid);
+      allow write: if false;
+    }
+
+    // ── emergencyAlerts/{alertId} ───────────────────────────
+    // Created only by the server after an explicit, confirmed user action.
+    // Readable by the sender and by CURRENT members of the alerted families.
+    match /emergencyAlerts/{alertId} {
+      allow get: if signedIn() && (
+        resource.data.uid == request.auth.uid
+        || resource.data.familyIds.hasAny(myFamilyIds())
+      );
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // ── geofences/{zoneId} ──────────────────────────────────
+    // A family's safe zones: visible to its current members; managed by
+    // owners/guardians through the server.
+    match /geofences/{zoneId} {
+      allow get: if signedIn() && resource.data.familyId in myFamilyIds();
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // ── families/{familyId}/events/{eventId} ────────────────
+    match /families/{familyId}/events/{eventId} {
+      allow read: if signedIn() && request.auth.uid in family(familyId).memberIds;
+      allow write: if false;
+    }
+
+    // ── notifications/{uid}/items/{itemId} ──────────────────
+    // Your inbox only. The only change you may make is marking an item read.
+    match /notifications/{uid}/items/{itemId} {
+      allow read: if isSelf(uid);
+      allow update: if isSelf(uid)
+        && onlyChanges(['read'])
+        && request.resource.data.read is bool;
+      allow create, delete: if false;
+    }
+
+    // ── devices/{deviceId} ──────────────────────────────────
+    // Devices a user registered themselves. Only the owner can read them;
+    // registration, push tokens and revocation go through the server.
+    // (The push token never leaves the server: there is no client read path
+    // that returns it, and clients can't write here at all.)
+    match /devices/{deviceId} {
+      allow get: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow list: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ── Server-only collections (explicit deny) ─────────────
+    // securityEvents: pseudonymous audit log, read by the admin console via
+    // the Admin SDK only. _rateLimits: global limiter counters (hashed keys).
+    // _pushLog: emulator/E2E-only record of pushes.
+    match /securityEvents/{id} { allow read, write: if false; }
+    match /_rateLimits/{id} { allow read, write: if false; }
+    match /_pushLog/{id} { allow read, write: if false; }
+  }
+}

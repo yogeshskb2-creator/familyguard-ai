@@ -1,0 +1,14 @@
+# Not needed to build or run the site on Vercel
+.next
+.next-e2e
+node_modules
+preview
+tests
+coverage
+*.log
+.env
+.env.*
+!.env.example
+service-account*.json
+.firebase
+tsconfig.tsbuildinfo

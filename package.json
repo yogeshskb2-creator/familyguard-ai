@@ -1,0 +1,64 @@
+{
+  "name": "familyguard-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Consent-based family safety and location sharing platform",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-familyguard-rules 'vitest run -c vitest.rules.config.mts'",
+    "test:e2e": "bash tests/e2e/run.sh",
+    "test:integration": "firebase emulators:exec --only auth,firestore --project demo-familyguard-int 'vitest run -c vitest.integration.config.mts'",
+    "test:all": "npm test && npm run test:rules && npm run test:integration && npm run test:e2e"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@google/genai": "^3.3.0",
+    "@vis.gl/react-google-maps": "^1.10.2",
+    "clsx": "^2.1.1",
+    "firebase": "^13.3.0",
+    "firebase-admin": "^14.5.1",
+    "framer-motion": "^14.13.0",
+    "lucide-react": "^1.72.0",
+    "next": "^15.5.29",
+    "openai": "^7.57.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@tailwindcss/postcss": "^4.3.5",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.10",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.29",
+    "firebase-tools": "^15.36.0",
+    "jsdom": "^31.0.0",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.0",
+    "postcss": "$postcss"
+  }
+}
