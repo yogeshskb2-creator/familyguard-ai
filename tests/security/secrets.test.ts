@@ -54,7 +54,7 @@ describe("secret scan", () => {
   });
 
   it("server-only secrets are never NEXT_PUBLIC_ and never read in client components", () => {
-    const SERVER = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "FIREBASE_ADMIN_PRIVATE_KEY", "FIREBASE_ADMIN_CLIENT_EMAIL", "SECURITY_LOG_SALT"];
+    const SERVER = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "FIREBASE_ADMIN_PRIVATE_KEY", "FIREBASE_ADMIN_CLIENT_EMAIL", "FIREBASE_SERVICE_ACCOUNT", "SECURITY_LOG_SALT"];
     const src = ALL.filter((f) => f.startsWith("src"));
     for (const f of src) {
       const text = readFileSync(f, "utf8");

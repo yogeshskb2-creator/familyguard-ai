@@ -19,19 +19,23 @@ if (!["grant", "revoke"].includes(action) || !email) {
   process.exit(1);
 }
 
-const { FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY } = process.env;
-if (!FIREBASE_ADMIN_PROJECT_ID || !FIREBASE_ADMIN_CLIENT_EMAIL || !FIREBASE_ADMIN_PRIVATE_KEY) {
-  console.error("Missing FIREBASE_ADMIN_* environment variables (use --env-file=.env.local).");
+let sa = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  const j = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  sa = { projectId: j.project_id, clientEmail: j.client_email, privateKey: j.private_key };
+} else if (process.env.FIREBASE_ADMIN_PROJECT_ID && process.env.FIREBASE_ADMIN_CLIENT_EMAIL && process.env.FIREBASE_ADMIN_PRIVATE_KEY) {
+  sa = {
+    projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY,
+  };
+}
+if (!sa) {
+  console.error("Missing FIREBASE_SERVICE_ACCOUNT or FIREBASE_ADMIN_* environment variables (use --env-file=.env.local).");
   process.exit(1);
 }
 
-initializeApp({
-  credential: cert({
-    projectId: FIREBASE_ADMIN_PROJECT_ID,
-    clientEmail: FIREBASE_ADMIN_CLIENT_EMAIL,
-    privateKey: FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n"),
-  }),
-});
+initializeApp({ credential: cert({ ...sa, privateKey: sa.privateKey.replace(/\\n/g, "\n") }) });
 
 const auth = getAuth();
 const user = await auth.getUserByEmail(email);
