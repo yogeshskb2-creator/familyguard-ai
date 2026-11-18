@@ -437,6 +437,8 @@ The user must sign in again for the claim to take effect. Editing a profile can'
 
 ### Vercel (recommended)
 
+Requires **Node.js 22** (pinned in `package.json` `engines` and `.nvmrc`). `firebase-admin` depends on `jose`, which is ESM-only; older Node versions fail with `require() of ES Module …/jose…` and every signed-in page returns 500.
+
 1. Push the repository to GitHub and import it in Vercel.
 2. In Project → Settings → Environment Variables, add every variable from `.env.example`. Paste `FIREBASE_ADMIN_PRIVATE_KEY` with its `\n` escapes.
 3. Deploy. Then add the Vercel domain to Firebase Auth → Authorized domains, and to the Maps API key's referrer restrictions.
