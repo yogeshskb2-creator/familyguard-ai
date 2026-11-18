@@ -121,6 +121,21 @@ describe("revocation", () => {
     await expectError(recordLocation(ann, fix()), 409, "not_sharing");
   });
 
+  it("an update racing with stop-sharing never crashes: it either succeeds with the stored fix or is refused", async () => {
+    for (let i = 0; i < 5; i++) {
+      await startSharing(ann, { familyIds: [home], keepHistory: false, historyRetentionDays: 7 });
+      const [update] = await Promise.allSettled([recordLocation(ann, fix(12 + i / 100, 77)), stopSharing(ann.uid)]);
+      if (update.status === "fulfilled") {
+        expect(update.value.lat).toBeCloseTo(12 + i / 100);
+        expect(update.value.accuracy).toBe(12);
+        expect(update.value.presence).toBe("online");
+      } else {
+        expect(update.reason).toMatchObject({ status: 409 });
+      }
+      expect((await locDoc(ann.uid)).exists).toBe(false);
+    }
+  });
+
   it("removing a member withdraws their location from that family", async () => {
     await join(ann, home, cat); // cat now in both
     await startSharing(cat, { familyIds: [home, work], keepHistory: false, historyRetentionDays: 7 });
