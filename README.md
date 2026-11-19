@@ -165,7 +165,8 @@ Known limits:
 - **All writes are made on the server** (`src/lib/families/service.server.ts`). Each one re-reads the family inside a Firestore transaction and works out the caller's role from that fresh copy. Firestore rules give clients **read-only** access: members can read their family, and the invitee plus owners and guardians can read invitations. No client can write to these collections.
 - **Removal takes effect immediately**: every read checks the current `memberIds` list.
 - **Limits**: 5 families per user, 20 members per family, 20 pending invitations per family.
-- **Email delivery**: invitation emails and SMS are **not sent** yet. Invitees see invitations in the app. Use "Copy message to send" to tell them, until notifications arrive in Phase 8.
+- **Join links** (the default way to invite): every invitation gets a private, single-use link (`/join/<token>`, 24 random bytes) that the inviter can copy or send on WhatsApp. Email and phone are optional. Whoever opens the link and signs in sees the family and inviter, and joins only by pressing **Join**. The page then offers to start sharing location with that family, which is still a separate, explicit choice. Only a SHA-256 of the token is stored. The raw link is shown once to the inviter. "New link" replaces it, and the old one stops working. A link dies when it is used, declined, revoked or expires. Sign-up, email verification and sign-in all return to the link (`?next=`).
+- **Email delivery**: invitation emails and SMS are **not sent**. Send the join link yourself (Copy link / Send on WhatsApp). An invitee who signs in with the invited verified email or phone also sees the invitation on the Family page.
 
 ## Location sharing and consent
 

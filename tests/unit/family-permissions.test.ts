@@ -54,10 +54,10 @@ describe("family permission matrix", () => {
 });
 
 describe("family input validation", () => {
-  it("requires exactly one of email or phone", () => {
+  it("accepts at most one of email or phone", () => {
     expect(inviteSchema.safeParse({ email: "a@b.co" }).success).toBe(true);
     expect(inviteSchema.safeParse({ phone: "+15550001111" }).success).toBe(true);
-    expect(inviteSchema.safeParse({}).success).toBe(false);
+    expect(inviteSchema.safeParse({}).success).toBe(true); // link-only invitation
     expect(inviteSchema.safeParse({ email: "a@b.co", phone: "+15550001111" }).success).toBe(false);
   });
   it("defaults the role to member and never accepts owner", () => {

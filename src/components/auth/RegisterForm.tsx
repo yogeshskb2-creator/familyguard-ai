@@ -6,12 +6,13 @@ import { useState } from "react";
 import { Button, Input, Notice } from "@/components/ui";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { registerWithEmail } from "@/lib/auth/client";
+import { withNext } from "@/lib/auth/safe-redirect";
 import { fieldErrors, registerSchema } from "@/lib/validation/auth";
 import { Divider } from "./AuthHeading";
 import { GoogleButton } from "./GoogleButton";
 import { PasswordStrength } from "./PasswordStrength";
 
-export function RegisterForm() {
+export function RegisterForm({ next = "/dashboard" }: { next?: string }) {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export function RegisterForm() {
     setLoading(true);
     try {
       await registerWithEmail(parsed.data);
-      router.push("/verify-email");
+      router.push(withNext("/verify-email", next));
     } catch (err) {
       setFormError(authErrorMessage(err));
       setLoading(false);
@@ -40,7 +41,7 @@ export function RegisterForm() {
       {formError && <Notice tone="danger">{formError}</Notice>}
       <GoogleButton
         onSignedIn={() => {
-          router.replace("/dashboard");
+          router.replace(next);
         }}
         onError={setFormError}
       />
@@ -92,7 +93,7 @@ export function RegisterForm() {
       </form>
       <p className="text-center text-sm text-slate-400">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-neon-cyan hover:underline">
+        <Link href={withNext("/login", next)} className="font-medium text-neon-cyan hover:underline">
           Sign in
         </Link>
       </p>

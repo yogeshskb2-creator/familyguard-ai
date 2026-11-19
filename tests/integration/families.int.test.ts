@@ -8,7 +8,10 @@ import {
   createFamily,
   deleteFamily,
   getFamilyForMember,
+  getJoinLink,
   inviteMember,
+  renewInvitationLink,
+  respondByJoinLink,
   listFamilyInvitations,
   listMyFamilies,
   listMyInvitations,
@@ -261,5 +264,76 @@ describe("profile sync", () => {
     await updateUserProfile(kid.uid, { displayName: "Meera S" });
     const fam = await getFamilyForMember(familyId, owner.uid);
     expect(fam.members.find((m) => m.uid === kid.uid)!.displayName).toBe("Meera S");
+  });
+});
+
+describe("join links", () => {
+  it("a link-only invitation lets whoever opens it join, exactly once", async () => {
+    const inv = await inviteMember(owner, familyId, { role: "member" });
+    expect(inv.joinToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect([inv.inviteeEmail, inv.inviteePhone]).toEqual([null, null]);
+
+    const view = await getJoinLink(stranger, inv.joinToken);
+    expect(view).toMatchObject({ familyId, familyName: "Sharma Family", invitedByName: "Ananya", role: "member", alreadyMember: false });
+
+    expect(await respondByJoinLink(stranger, inv.joinToken, true)).toEqual({ familyId });
+    expect((await getFamilyForMember(familyId, stranger.uid)).myRole).toBe("member");
+
+    const eve = await makeUser({ displayName: "Eve" });
+    await expectError(getJoinLink(eve, inv.joinToken), 404, "invalid_link");
+    await expectError(respondByJoinLink(eve, inv.joinToken, true), 404, "invalid_link");
+  });
+
+  it("only the token's hash is stored, never the link itself", async () => {
+    const inv = await inviteMember(owner, familyId, { role: "member" });
+    const stored = (await adminDb().doc(`familyInvitations/${inv.id}`).get()).data()!;
+    expect(JSON.stringify(stored)).not.toContain(inv.joinToken);
+    expect(stored.linkTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    const listed = await listFamilyInvitations(familyId, owner.uid);
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.every((i) => !("joinToken" in i) && !("linkTokenHash" in i))).toBe(true);
+  });
+
+  it("the role comes from the invitation, and existing members can't use a link twice", async () => {
+    const inv = await inviteMember(guardian, familyId, { role: "member" });
+    expect((await getJoinLink(kid, inv.joinToken)).alreadyMember).toBe(true);
+    await expectError(respondByJoinLink(kid, inv.joinToken, true), 409, "already_member");
+    await respondByJoinLink(stranger, inv.joinToken, true);
+    const me = (await getFamilyForMember(familyId, stranger.uid)).members.find((m) => m.uid === stranger.uid)!;
+    expect(me.role).toBe("member");
+  });
+
+  it("declining through the link closes it", async () => {
+    const inv = await inviteMember(owner, familyId, { role: "member" });
+    await respondByJoinLink(stranger, inv.joinToken, false);
+    await expectError(getFamilyForMember(familyId, stranger.uid), 404);
+    await expectError(respondByJoinLink(stranger, inv.joinToken, true), 404, "invalid_link");
+  });
+
+  it("revoked, expired, replaced and made-up links don't work", async () => {
+    const revoked = await inviteMember(owner, familyId, { role: "member" });
+    await revokeInvitation(owner, familyId, revoked.id);
+    await expectError(respondByJoinLink(stranger, revoked.joinToken, true), 404, "invalid_link");
+
+    const expired = await inviteMember(owner, familyId, { role: "member" });
+    await adminDb().doc(`familyInvitations/${expired.id}`).update({ expiresAt: Timestamp.fromMillis(Date.now() - 1000) });
+    await expectError(respondByJoinLink(stranger, expired.joinToken, true), 410, "expired");
+
+    const renewed = await inviteMember(owner, familyId, { role: "member" });
+    await expectError(renewInvitationLink(kid, familyId, renewed.id), 403);
+    const { joinToken } = await renewInvitationLink(owner, familyId, renewed.id);
+    expect(joinToken).not.toBe(renewed.joinToken);
+    await expectError(respondByJoinLink(stranger, renewed.joinToken, true), 404, "invalid_link");
+
+    await expectError(respondByJoinLink(stranger, "A".repeat(32), true), 404, "invalid_link");
+    await respondByJoinLink(stranger, joinToken, true);
+    expect((await getFamilyForMember(familyId, stranger.uid)).myRole).toBe("member");
+  });
+
+  it("an email invitation's link also works for someone signed in with a different email", async () => {
+    const inv = await inviteMember(owner, familyId, { email: "papa-old@example.com", role: "member" });
+    await respondByJoinLink(stranger, inv.joinToken, true);
+    expect((await getFamilyForMember(familyId, stranger.uid)).myRole).toBe("member");
+    expect(await listFamilyInvitations(familyId, owner.uid)).toEqual([]);
   });
 });

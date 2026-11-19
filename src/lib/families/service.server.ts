@@ -1,5 +1,6 @@
 import "server-only";
-import { FieldValue, Timestamp, type DocumentData, type Transaction } from "firebase-admin/firestore";
+import { createHash, randomBytes } from "node:crypto";
+import { FieldValue, Timestamp, type DocumentData, type DocumentReference, type Transaction } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import type { SessionUser } from "@/lib/auth/session";
 import type { FamilyInvitation, FamilyMember, FamilyRole, InvitationStatus } from "@/types/models";
@@ -34,6 +35,17 @@ const invitations = () => db().collection("familyInvitations");
 const users = () => db().collection("users");
 
 const ms = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : typeof v === "number" ? v : 0);
+
+/*
+ * Join links. Each invitation carries a private, single-use link token
+ * (24 random bytes). Only its SHA-256 is stored, so a database read never
+ * reveals a usable link; the raw token is returned once, to the inviter.
+ * Possessing the link is what authorises accepting it, so it must be shared
+ * privately. It dies when the invitation is accepted, declined, revoked or
+ * expires, and the inviter can replace it with a new one at any time.
+ */
+const newJoinToken = () => randomBytes(24).toString("base64url");
+const hashJoinToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export interface FamilyView {
   id: string;
@@ -229,15 +241,20 @@ async function existingInvitee(input: InviteInput): Promise<{ uid: string; notif
  * The response is identical whether or not the invitee has an account, so
  * inviting can't be used to discover who uses FamilyGuard.
  */
-export async function inviteMember(user: SessionUser, familyId: string, input: InviteInput): Promise<InvitationView> {
+export async function inviteMember(
+  user: SessionUser,
+  familyId: string,
+  input: InviteInput,
+): Promise<InvitationView & { joinToken: string }> {
   const inviteeEmail = input.email?.toLowerCase() ?? null;
   const inviteePhone = input.phone ?? null;
   if ((inviteeEmail && inviteeEmail === user.email?.toLowerCase()) || (inviteePhone && inviteePhone === user.phoneNumber)) {
     throw new FamilyError(400, "self_invite", "You can't invite yourself.");
   }
-  const invitee = await existingInvitee(input);
+  const invitee = inviteeEmail || inviteePhone ? await existingInvitee(input) : null;
   const inviteeUid = invitee?.uid ?? null;
   const ref = invitations().doc();
+  const joinToken = newJoinToken();
   const outbox = new PushOutbox();
 
   await db().runTransaction(async (tx) => {
@@ -270,6 +287,7 @@ export async function inviteMember(user: SessionUser, familyId: string, input: I
       inviteePhone,
       role: input.role,
       status: "pending",
+      linkTokenHash: hashJoinToken(joinToken),
       createdAt: FieldValue.serverTimestamp(),
       expiresAt: Timestamp.fromMillis(Date.now() + LIMITS.inviteTtlMs),
       respondedAt: null,
@@ -289,7 +307,25 @@ export async function inviteMember(user: SessionUser, familyId: string, input: I
     }
   });
   await outbox.flush();
-  return toInvitationView(ref.id, (await ref.get()).data()!);
+  const created = await ref.get();
+  if (!created.exists) throw new FamilyError(409, "not_pending", "This invitation is no longer pending.");
+  return { ...toInvitationView(ref.id, created.data()!), joinToken };
+}
+
+/** Replace an invitation's join link (the old link stops working at once). Owners/guardians only. */
+export async function renewInvitationLink(user: SessionUser, familyId: string, inviteId: string): Promise<{ joinToken: string }> {
+  const joinToken = newJoinToken();
+  await db().runTransaction(async (tx) => {
+    const { role } = await loadForMember(tx, familyId, user.uid);
+    if (!canManageInvites(role)) throw forbidden();
+    const ref = invitations().doc(inviteId);
+    const inv = await tx.get(ref);
+    if (!inv.exists || inv.get("familyId") !== familyId) throw new FamilyError(404, "not_found", "Invitation not found.");
+    if (inv.get("status") !== "pending") throw new FamilyError(409, "not_pending", "This invitation is no longer pending.");
+    if (ms(inv.get("expiresAt")) <= Date.now()) throw new FamilyError(410, "expired", "This invitation has expired. Create a new one.");
+    tx.update(ref, { linkTokenHash: hashJoinToken(joinToken) });
+  });
+  return { joinToken };
 }
 
 export async function revokeInvitation(user: SessionUser, familyId: string, inviteId: string): Promise<void> {
@@ -300,7 +336,7 @@ export async function revokeInvitation(user: SessionUser, familyId: string, invi
     const inv = await tx.get(ref);
     if (!inv.exists || inv.get("familyId") !== familyId) throw new FamilyError(404, "not_found", "Invitation not found.");
     if (inv.get("status") !== "pending") throw new FamilyError(409, "not_pending", "This invitation is no longer pending.");
-    tx.update(ref, { status: "revoked", respondedAt: FieldValue.serverTimestamp() });
+    tx.update(ref, { status: "revoked", respondedAt: FieldValue.serverTimestamp(), linkTokenHash: FieldValue.delete() });
   });
 }
 
@@ -318,44 +354,111 @@ export async function respondToInvitation(user: SessionUser, inviteId: string, a
     const d = inv.data();
     // Someone else's invitation looks exactly like a missing one.
     if (!inv.exists || !d || !addressedTo(user, d)) throw new FamilyError(404, "not_found", "Invitation not found.");
-    if (d.status !== "pending") throw new FamilyError(409, "not_pending", "This invitation is no longer pending.");
-    if (ms(d.expiresAt) <= Date.now()) {
-      throw new FamilyError(410, "expired", "This invitation has expired. Ask for a new one.");
-    }
-
-    if (!accept) {
-      tx.update(invRef, { status: "rejected", respondedAt: FieldValue.serverTimestamp(), respondedBy: user.uid });
-      return { familyId: d.familyId as string };
-    }
-
-    const famRef = families().doc(d.familyId);
-    const fam = await tx.get(famRef);
-    const profile = await profileName(tx, user.uid, user.displayName);
-    if (!fam.exists) throw new FamilyError(410, "family_gone", "This family no longer exists.");
-    const famData = fam.data()!;
-    const memberIds = famData.memberIds as string[];
-    if (memberIds.includes(user.uid)) throw new FamilyError(409, "already_member", "You're already in this family.");
-    if (memberIds.length >= LIMITS.maxMembersPerFamily) throw new FamilyError(409, "member_limit", "This family is full.");
-    if (profile.familyIds.length >= LIMITS.maxFamiliesPerUser) {
-      throw new FamilyError(409, "family_limit", `You can belong to at most ${LIMITS.maxFamiliesPerUser} families.`);
-    }
-
-    const usedColors = Object.values(famData.members as Record<string, { color: string }>).map((m) => m.color);
-    tx.update(famRef, {
-      memberIds: FieldValue.arrayUnion(user.uid),
-      [`members.${user.uid}`]: {
-        uid: user.uid,
-        displayName: profile.name,
-        role: d.role,
-        color: nextMemberColor(usedColors),
-        joinedAt: FieldValue.serverTimestamp(),
-      },
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    tx.update(users().doc(user.uid), { familyIds: FieldValue.arrayUnion(d.familyId), updatedAt: FieldValue.serverTimestamp() });
-    tx.update(invRef, { status: "accepted", respondedAt: FieldValue.serverTimestamp(), respondedBy: user.uid });
-    return { familyId: d.familyId as string };
+    return applyResponse(tx, user, invRef, d, accept);
   });
+}
+
+/** What the person who opened a join link sees before deciding. */
+export interface JoinLinkView {
+  familyId: string;
+  familyName: string;
+  invitedByName: string;
+  role: FamilyInvitation["role"];
+  memberCount: number;
+  alreadyMember: boolean;
+  expiresAt: number;
+}
+
+/** Look up a join link. Unknown, used, revoked and expired links all fail the same way. */
+export async function getJoinLink(user: SessionUser, token: string): Promise<JoinLinkView> {
+  const inv = await findByJoinToken(token);
+  const d = inv.data();
+  const fam = await families().doc(d.familyId as string).get();
+  if (!fam.exists) throw new FamilyError(410, "family_gone", "This family no longer exists.");
+  const memberIds = (fam.get("memberIds") as string[] | undefined) ?? [];
+  return {
+    familyId: d.familyId,
+    familyName: (fam.get("name") as string | undefined) ?? d.familyName,
+    invitedByName: d.invitedByName,
+    role: d.role,
+    memberCount: memberIds.length,
+    alreadyMember: memberIds.includes(user.uid),
+    expiresAt: ms(d.expiresAt),
+  };
+}
+
+/** Accept or decline through a join link. The link itself is the authorisation; it is single-use. */
+export async function respondByJoinLink(user: SessionUser, token: string, accept: boolean): Promise<{ familyId: string }> {
+  const found = await findByJoinToken(token);
+  return db().runTransaction(async (tx) => {
+    const inv = await tx.get(found.ref);
+    const d = inv.data();
+    // Re-check inside the transaction: the link may have been used or replaced meanwhile.
+    if (!inv.exists || !d || d.linkTokenHash !== hashJoinToken(token)) throw invalidLink();
+    return applyResponse(tx, user, found.ref, d, accept);
+  });
+}
+
+const invalidLink = () =>
+  new FamilyError(404, "invalid_link", "This invitation link isn't valid any more. It may have been used already. Ask for a new link.");
+
+async function findByJoinToken(token: string) {
+  const snap = await invitations().where("linkTokenHash", "==", hashJoinToken(token)).limit(1).get();
+  const doc = snap.docs[0];
+  if (!doc) throw invalidLink();
+  const d = doc.data();
+  if (d.status !== "pending") throw invalidLink();
+  if (ms(d.expiresAt) <= Date.now()) throw new FamilyError(410, "expired", "This invitation has expired. Ask for a new link.");
+  return { ref: doc.ref, data: () => d };
+}
+
+async function applyResponse(
+  tx: Transaction,
+  user: SessionUser,
+  invRef: DocumentReference,
+  d: DocumentData,
+  accept: boolean,
+): Promise<{ familyId: string }> {
+  if (d.status !== "pending") throw new FamilyError(409, "not_pending", "This invitation is no longer pending.");
+  if (ms(d.expiresAt) <= Date.now()) {
+    throw new FamilyError(410, "expired", "This invitation has expired. Ask for a new one.");
+  }
+  // Reads first (Firestore transactions require all reads before writes).
+  const famRef = families().doc(d.familyId);
+  const fam = accept ? await tx.get(famRef) : null;
+  const profile = accept ? await profileName(tx, user.uid, user.displayName) : null;
+  const closed = { respondedAt: FieldValue.serverTimestamp(), respondedBy: user.uid, linkTokenHash: FieldValue.delete() };
+
+  if (!accept) {
+    tx.update(invRef, { status: "rejected", ...closed });
+    return { familyId: d.familyId as string };
+  }
+
+  const famData = fam && fam.exists ? fam.data() : undefined;
+  if (!famData || !profile) throw new FamilyError(410, "family_gone", "This family no longer exists.");
+  if (!profile.exists) throw new FamilyError(409, "no_profile", "Your profile isn't set up yet. Sign in again.");
+  const memberIds = famData.memberIds as string[];
+  if (memberIds.includes(user.uid)) throw new FamilyError(409, "already_member", "You're already in this family.");
+  if (memberIds.length >= LIMITS.maxMembersPerFamily) throw new FamilyError(409, "member_limit", "This family is full.");
+  if (profile.familyIds.length >= LIMITS.maxFamiliesPerUser) {
+    throw new FamilyError(409, "family_limit", `You can belong to at most ${LIMITS.maxFamiliesPerUser} families.`);
+  }
+
+  const usedColors = Object.values(famData.members as Record<string, { color: string }>).map((m) => m.color);
+  tx.update(famRef, {
+    memberIds: FieldValue.arrayUnion(user.uid),
+    [`members.${user.uid}`]: {
+      uid: user.uid,
+      displayName: profile.name,
+      role: d.role,
+      color: nextMemberColor(usedColors),
+      joinedAt: FieldValue.serverTimestamp(),
+    },
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  tx.update(users().doc(user.uid), { familyIds: FieldValue.arrayUnion(d.familyId), updatedAt: FieldValue.serverTimestamp() });
+  tx.update(invRef, { status: "accepted", ...closed });
+  return { familyId: d.familyId as string };
 }
 
 // ── Members ────────────────────────────────────────────────

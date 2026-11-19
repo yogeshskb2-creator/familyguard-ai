@@ -21,5 +21,7 @@ const inviteLimiter = createGlobalRateLimiter({ name: "invite", limit: 30, windo
 export const POST = authed<P>(async ({ user, params, body }) => {
   const input = await body(inviteSchema);
   if (!(await inviteLimiter(user.uid)).ok) throw new FamilyError(429, "rate_limited", "Too many invitations sent. Try again later.");
-  return { invitation: await inviteMember(user, id(params), input) };
+  const { joinToken, ...invitation } = await inviteMember(user, id(params), input);
+  // The raw join token is returned only here, once, to the inviter.
+  return { invitation, joinToken };
 });

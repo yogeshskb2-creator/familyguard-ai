@@ -15,4 +15,5 @@ export const PROTECTED_PREFIXES = [
   "/notifications",
   "/settings",
   "/admin",
+  "/join",
 ];

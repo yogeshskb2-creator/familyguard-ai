@@ -11,7 +11,11 @@ export const familyNameSchema = z
 export const createFamilySchema = z.object({ name: familyNameSchema }).strict();
 export const renameFamilySchema = createFamilySchema;
 
-/** Exactly one of email / phone identifies who may accept the invitation. */
+/**
+ * At most one of email / phone. With one, the invitation also shows up for
+ * whoever signs in with that verified email / phone. With neither, it is a
+ * link-only invitation: whoever opens the private join link can accept it.
+ */
 export const inviteSchema = z
   .object({
     email: emailSchema.optional(),
@@ -19,10 +23,13 @@ export const inviteSchema = z
     role: z.enum(["guardian", "member"]).default("member"),
   })
   .strict()
-  .refine((v) => Boolean(v.email) !== Boolean(v.phone), {
-    message: "Enter an email address or a phone number",
+  .refine((v) => !(v.email && v.phone), {
+    message: "Enter an email address or a phone number, not both",
     path: ["email"],
   });
+
+/** Private join-link token: 24 random bytes, base64url (32 chars). */
+export const joinTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{32}$/);
 
 export const changeRoleSchema = z.object({ role: z.enum(["guardian", "member"]) }).strict();
 

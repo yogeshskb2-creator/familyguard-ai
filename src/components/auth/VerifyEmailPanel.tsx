@@ -8,10 +8,11 @@ import { Button, Notice, Skeleton } from "@/components/ui";
 import { useAuthUser } from "@/hooks/useAuthUser";
 import { AuthFlowError, authErrorMessage } from "@/lib/auth/errors";
 import { completeEmailVerification, resendVerificationEmail, signOut } from "@/lib/auth/client";
+import { withNext } from "@/lib/auth/safe-redirect";
 
 const RESEND_COOLDOWN_SEC = 60;
 
-export function VerifyEmailPanel() {
+export function VerifyEmailPanel({ next = "/dashboard" }: { next?: string }) {
   const router = useRouter();
   const { user, loading } = useAuthUser();
   const [message, setMessage] = useState<{ tone: "safe" | "danger" | "info"; text: string } | null>(null);
@@ -29,7 +30,7 @@ export function VerifyEmailPanel() {
   if (!user) {
     return (
       <Notice tone="info" title="Sign in to continue">
-        Your session has ended. <Link className="underline" href="/login">Sign in</Link> again — if your email still
+        Your session has ended. <Link className="underline" href={withNext("/login", next)}>Sign in</Link> again — if your email still
         isn&apos;t verified we&apos;ll send a new link.
       </Notice>
     );
@@ -41,14 +42,14 @@ export function VerifyEmailPanel() {
     try {
       const result = await completeEmailVerification();
       if (result === "verified") {
-        router.replace("/dashboard");
+        router.replace(next);
         return;
       }
       setMessage({ tone: "info", text: "Not verified yet. Click the link in the email, then try again." });
     } catch (err) {
       if (err instanceof AuthFlowError && err.code === "stale_sign_in") {
         await signOut();
-        router.replace("/login?verified=1");
+        router.replace(withNext("/login", next, "verified=1"));
         return;
       }
       setMessage({ tone: "danger", text: authErrorMessage(err) });
@@ -88,7 +89,7 @@ export function VerifyEmailPanel() {
         className="w-full text-center text-xs text-slate-500 hover:text-slate-300"
         onClick={async () => {
           await signOut();
-          router.replace("/login");
+          router.replace(withNext("/login", next));
         }}
       >
         Use a different account
