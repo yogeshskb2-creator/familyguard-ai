@@ -160,6 +160,7 @@ export type NotificationKind =
   | "geofence_exit"
   | "sharing_started"
   | "sharing_stopped"
+  | "sharing_request"
   | "device";
 
 export interface AppNotification {

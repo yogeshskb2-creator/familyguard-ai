@@ -22,6 +22,7 @@ const KIND_LABEL: Record<string, string> = {
   invitation: "Invitation",
   sharing_started: "Sharing started",
   sharing_stopped: "Sharing stopped",
+  sharing_request: "Asked to share",
   device: "Device security",
 };
 

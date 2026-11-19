@@ -10,10 +10,12 @@ import {
   getMySharingState,
   listMyHistory,
   recordLocation,
+  requestLocationShare,
   startSharing,
   stopSharing,
   updateSharing,
 } from "@/lib/location/service.server";
+import { listNotifications } from "@/lib/notifications/service.server";
 import { expectError, makeUser, wipe } from "./helpers";
 
 let ann: SessionUser, bob: SessionUser, cat: SessionUser, eve: SessionUser;
@@ -200,5 +202,22 @@ describe("location history (opt-in, owner-only, deletable)", () => {
     await recordLocation(ann, fix(13, 78));
     expect(await deleteMyHistory(ann.uid)).toBe(2);
     expect(await listMyHistory(ann.uid)).toEqual([]);
+  });
+});
+
+describe("asking a member to share", () => {
+  it("notifies the member, links to the family, and changes nothing about consent", async () => {
+    await requestLocationShare(ann, home, bob.uid);
+    const [n] = await listNotifications(bob.uid);
+    expect(n).toMatchObject({ kind: "sharing_request", title: "Ann asked you to share your location", link: `/family/${home}` });
+    expect((await getMySharingState(bob.uid)).consent.active).toBe(false);
+  });
+
+  it("is refused once they already share with that family, and for outsiders or non-members", async () => {
+    await startSharing(bob, { familyIds: [home], keepHistory: false, historyRetentionDays: 7 });
+    await expectError(requestLocationShare(ann, home, bob.uid), 409, "already_sharing");
+    await expectError(requestLocationShare(eve, home, bob.uid), 404);
+    await expectError(requestLocationShare(ann, home, eve.uid), 404, "not_member");
+    await expectError(requestLocationShare(ann, home, ann.uid), 400);
   });
 });

@@ -26,7 +26,7 @@ async function groupCount(q: FirebaseFirestore.Query, onMissing: () => void): Pr
 }
 const since = (ms: number) => Timestamp.fromMillis(Date.now() - ms);
 const DAY = 24 * 60 * 60 * 1000;
-const NOTIFICATION_KINDS: NotificationKind[] = ["sos", "geofence_enter", "geofence_exit", "invitation", "sharing_started", "sharing_stopped", "device"];
+const NOTIFICATION_KINDS: NotificationKind[] = ["sos", "geofence_enter", "geofence_exit", "invitation", "sharing_started", "sharing_stopped", "sharing_request", "device"];
 const FAMILY_SCAN_CAP = 5000;
 const startedAt = Date.now();
 
