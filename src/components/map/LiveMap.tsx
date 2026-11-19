@@ -13,18 +13,25 @@ import { placedMembers } from "@/lib/location/map";
 import { cn, timeAgo } from "@/lib/utils";
 import { GoogleFamilyMap } from "./GoogleFamilyMap";
 import { MapErrorBoundary } from "./MapErrorBoundary";
+import { OsmFamilyMap } from "./OsmFamilyMap";
 import { SchematicMap } from "./SchematicMap";
 import type { MyPosition } from "./types";
 
 /** Google's documented demo Map ID — enough for Advanced Markers in development. */
 const DEMO_MAP_ID = "DEMO_MAP_ID";
 
-type MapMode = { kind: "google" } | { kind: "schematic"; reason: "no_key" | "auth" | "load" };
+/**
+ * google    — Google Maps (a NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is set).
+ * osm       — OpenStreetMap street tiles: the default without a Google key; needs no key or billing.
+ * schematic — no tiles at all: Google failed, or OSM tiles couldn't be loaded.
+ */
+type FallbackReason = "auth" | "load" | "tiles";
+type MapMode = { kind: "google" } | { kind: "osm" } | { kind: "schematic"; reason: FallbackReason };
 
-const FALLBACK_COPY: Record<"no_key" | "auth" | "load", string> = {
-  no_key: "Google Maps isn't configured (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set).",
+const FALLBACK_COPY: Record<FallbackReason, string> = {
   auth: "Google Maps rejected the API key — check that it's valid, the Maps JavaScript API is enabled, billing is on, and this domain is allowed.",
   load: "Google Maps couldn't be loaded (network or browser blocked it).",
+  tiles: "Map tiles couldn't be loaded (network or browser blocked them).",
 };
 
 export function LiveMap({
@@ -50,9 +57,7 @@ export function LiveMap({
   const [meToken, setMeToken] = useState(0);
   const [localMe, setLocalMe] = useState<MyPosition | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
-  const [mode, setMode] = useState<MapMode>(
-    publicEnv.mapsApiKey ? { kind: "google" } : { kind: "schematic", reason: "no_key" },
-  );
+  const [mode, setMode] = useState<MapMode>(publicEnv.mapsApiKey ? { kind: "google" } : { kind: "osm" });
 
   const placed = useMemo(() => placedMembers(members ?? []), [members]);
 
@@ -67,7 +72,11 @@ export function LiveMap({
     (reason: "auth" | "load") => setMode((m) => (m.kind === "schematic" ? m : { kind: "schematic", reason })),
     [],
   );
-  const onCrash = useCallback(() => onFailure("load"), [onFailure]);
+  const onOsmFailure = useCallback(() => setMode((m) => (m.kind === "osm" ? { kind: "schematic", reason: "tiles" } : m)), []);
+  const onCrash = useCallback(
+    () => setMode((m) => (m.kind === "schematic" ? m : { kind: "schematic", reason: m.kind === "osm" ? "tiles" : "load" })),
+    [],
+  );
 
   /**
    * "My location" only ever shows your position on THIS screen. It does not
@@ -115,6 +124,8 @@ export function LiveMap({
             mapId={publicEnv.mapsMapId || DEMO_MAP_ID}
             onFailure={onFailure}
           />
+        ) : mode.kind === "osm" ? (
+          <OsmFamilyMap {...viewProps} onFailure={onOsmFailure} />
         ) : (
           <SchematicMap {...viewProps} />
         )}

@@ -197,17 +197,61 @@ describe("LiveMap (Google path)", () => {
   });
 });
 
-describe("LiveMap (no API key)", () => {
-  it("uses the schematic view, says why, and still shows real positions with a scale bar", async () => {
+describe("LiveMap (no API key) — OpenStreetMap", () => {
+  it("shows a real street map from OpenStreetMap, with no warning, pins, zones, a scale bar and attribution", async () => {
     env.key = "";
     renderMap();
-    await screen.findByTestId("schematic-map");
-    expect(screen.getByText(/isn't configured/)).toBeInTheDocument();
+    const map = await screen.findByTestId("osm-map");
+    expect(screen.queryByTestId("google-map")).toBeNull();
+    expect(screen.queryByText(/Schematic view/)).toBeNull();
     await waitFor(() => expect(screen.getByTestId("pin-ann")).toBeInTheDocument());
+    expect(screen.getByTestId("pin-bob")).toBeInTheDocument();
+    expect(screen.queryByTestId("pin-cat")).toBeNull();
+    expect(screen.getByTestId("zone-z1")).toHaveTextContent("Home");
     expect(screen.getByTestId("scale-bar")).toHaveTextContent(/m|km/);
-    expect(screen.getByTestId("zone-z1")).toHaveTextContent("Home"); // safe zone drawn to scale
+    const tiles = map.querySelectorAll("img");
+    expect(tiles.length).toBeGreaterThan(0);
+    for (const t of tiles) expect(t.getAttribute("src")).toMatch(/^https:\/\/tile\.openstreetmap\.org\/\d+\/\d+\/\d+\.png$/);
+    expect(screen.getByRole("link", { name: "OpenStreetMap" })).toHaveAttribute("href", "https://www.openstreetmap.org/copyright");
     await userEvent.click(screen.getByRole("button", { name: "Show Ann Lee" }));
     expect(screen.getByTestId("member-popup")).toHaveTextContent("Ann Lee");
     expect(screen.getByTestId("member-popup")).toHaveTextContent("(you)");
+  });
+
+  it("falls back to the labelled schematic view when tiles can't be loaded", async () => {
+    env.key = "";
+    renderMap();
+    const map = await screen.findByTestId("osm-map");
+    await waitFor(() => expect(map.querySelectorAll("img").length).toBeGreaterThanOrEqual(6));
+    act(() => map.querySelectorAll("img").forEach((img) => img.dispatchEvent(new Event("error"))));
+    await screen.findByTestId("schematic-map");
+    expect(screen.getByText(/tiles couldn't be loaded/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("pin-ann")).toBeInTheDocument());
+  });
+
+  it("falls back if no tile ever loads (watchdog)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    env.key = "";
+    renderMap();
+    await screen.findByTestId("osm-map");
+    await act(async () => {
+      vi.advanceTimersByTime(15_001);
+    });
+    expect(await screen.findByTestId("schematic-map")).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("does NOT fall back once a tile has loaded", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    env.key = "";
+    renderMap();
+    const map = await screen.findByTestId("osm-map");
+    act(() => map.querySelector("img")!.dispatchEvent(new Event("load")));
+    await act(async () => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(screen.queryByTestId("schematic-map")).toBeNull();
+    expect(screen.getByTestId("osm-map")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });

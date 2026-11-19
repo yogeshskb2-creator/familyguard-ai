@@ -19,6 +19,10 @@ describe("Content-Security-Policy", () => {
     for (const v of Object.values(prod)) expect(v).not.toContain("*");
     expect(prod).toHaveProperty("upgrade-insecure-requests");
   });
+  it("allows OpenStreetMap tiles as images only — not scripts, frames or fetches", () => {
+    expect(prod["img-src"]).toContain("https://tile.openstreetmap.org");
+    for (const d of ["script-src", "connect-src", "frame-src", "default-src"]) expect(prod[d].join(" ")).not.toContain("openstreetmap");
+  });
   it("only allows emulator hosts in emulator mode", () => {
     expect(buildCsp({})).not.toContain("127.0.0.1");
     expect(buildCsp({ emulators: true })).toContain("http://127.0.0.1:9099");

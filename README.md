@@ -258,6 +258,8 @@ Known limits:
 
 ## Google Maps setup
 
+Google Maps is **optional**. Without `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` the map uses **OpenStreetMap** street tiles instead (see below), which need no key and no billing. Set up Google Maps only if you want Google's map style:
+
 1. In Google Cloud Console, enable the **Maps JavaScript API** and make sure **billing** is on.
 2. Create an API key and **restrict it**:
    - **Application restrictions:** HTTP referrers, listing your domains (for example `https://your-app.vercel.app/*` and `http://localhost:3000/*`).
@@ -279,10 +281,18 @@ Known limits:
 
 **My location** shows your position **on your own screen only**. It never sends anything to the server, and sharing stays a separate, explicit choice. The E2E suite checks this.
 
-### When Google Maps can't load
+### Without a Google key: OpenStreetMap
+
+When no Google key is set, the map draws **OpenStreetMap** tiles (`tile.openstreetmap.org`) with streets, place names, drag to pan, wheel/pinch/double-click and button zoom, safe zones and accuracy circles drawn to scale, a scale bar, **Fit everyone** and **My location**. It uses no extra library: tiles are plain images positioned with Web-Mercator maths in `src/lib/location/tiles.ts` (unit-tested). Tiles are dark-tinted to match the app.
+
+- The CSP allows `https://tile.openstreetmap.org` for **images only**.
+- OpenStreetMap's [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) requires the visible "© OpenStreetMap contributors" credit, which is always shown, and is meant for light use. For heavy traffic, switch to Google Maps or a commercial tile provider.
+- If no tile loads within 15 seconds, or tiles keep failing, the map falls back to the schematic view below.
+
+### When no map tiles can load
 
 The map falls back to a clearly labelled **schematic view** in any of these cases:
-- the key is missing,
+- OpenStreetMap tiles can't be loaded (no Google key and the network or browser blocks them),
 - Google rejects the key (detected through Google's `gm_authFailure` hook),
 - the tiles don't load within 15 seconds,
 - Google's map code throws an error. An error boundary contains it, so only the map falls back and the rest of the page keeps working.
