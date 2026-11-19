@@ -37,4 +37,16 @@ export function nextZoneState(
 }
 
 export const ZONE_KINDS = ["home", "school", "office", "college", "custom"] as const;
-export const ZONE_LIMITS = { minRadius: 50, maxRadius: 5000, maxZonesPerFamily: 20 } as const;
+export const ZONE_LIMITS = { minRadius: 50, maxRadius: 50_000, maxZonesPerFamily: 20, maxWatched: 20 } as const;
+
+/** Quick choices in the zone form (metres). */
+export const RADIUS_PRESETS = [200, 500, 1000, 2000, 5000, 10_000, 25_000] as const;
+
+export function formatRadius(m: number): string {
+  return m >= 1000 ? `${Number((m / 1000).toFixed(1))} km` : `${m} m`;
+}
+
+/** Whether a zone applies to this person: an empty watch list means everyone. */
+export function watches(zone: { watchUids?: string[] }, uid: string): boolean {
+  return !zone.watchUids || zone.watchUids.length === 0 || zone.watchUids.includes(uid);
+}

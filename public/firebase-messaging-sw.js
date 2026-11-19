@@ -25,14 +25,15 @@ self.addEventListener("push", (event) => {
   }
   const n = payload.notification || {};
   const data = payload.data || {};
-  const critical = data.kind === "sos";
+  const critical = data.kind === "sos" || data.critical === "1";
   const link = safeLink((payload.fcmOptions && payload.fcmOptions.link) || data.link);
   event.waitUntil(
     self.registration.showNotification(n.title || "FamilyGuard AI", {
       body: n.body || "",
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
-      tag: critical ? "familyguard-sos" : undefined,
+      tag: critical ? (data.kind === "sos" ? "familyguard-sos" : "familyguard-alarm") : undefined,
+      vibrate: critical ? [500, 200, 500, 200, 500] : undefined,
       renotify: critical,
       requireInteraction: critical,
       data: { link },

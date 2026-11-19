@@ -5,6 +5,7 @@ import { NO_CONSENT } from "@/lib/location/consent";
 import type { SharingConsent } from "@/types/models";
 import { MobileNav } from "./MobileNav";
 import { SosBanner } from "@/components/sos/SosBanner";
+import { ZoneAlarmBanner } from "@/components/geofences/ZoneAlarmBanner";
 import { DeviceHeartbeat } from "@/components/devices/DeviceHeartbeat";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -33,6 +34,7 @@ export function AppShell({
         <Topbar userName={userName} live={viewer.mode === "live"} />
         <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:pb-12">
           <SosBanner enabled={viewer.mode === "live"} myUid={viewer.mode === "live" ? viewer.user.uid : null} />
+          <ZoneAlarmBanner enabled={viewer.mode === "live"} />
           <DeviceHeartbeat enabled={viewer.mode === "live"} />
           {children}
         </main>

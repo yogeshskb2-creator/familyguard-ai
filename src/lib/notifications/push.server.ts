@@ -40,13 +40,15 @@ export const fcmTransport: PushTransport = {
     const res = await adminMessaging().sendEachForMulticast({
       tokens,
       notification: { title: msg.title, body: msg.body },
-      data: { link: msg.link, kind: msg.kind },
+      data: { link: msg.link, kind: msg.kind, critical: msg.critical ? "1" : "" },
       webpush: {
         fcmOptions: { link: msg.link },
         notification: {
           icon: "/icons/icon-192.png",
           badge: "/icons/icon-192.png",
-          tag: msg.kind === "sos" ? "familyguard-sos" : undefined,
+          tag: msg.kind === "sos" ? "familyguard-sos" : msg.critical ? "familyguard-alarm" : undefined,
+          renotify: msg.critical,
+          vibrate: msg.critical ? [500, 200, 500, 200, 500] : undefined,
           requireInteraction: msg.critical,
         },
         headers: msg.critical ? { Urgency: "high" } : undefined,
