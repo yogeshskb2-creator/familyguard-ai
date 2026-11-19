@@ -24,7 +24,7 @@ export interface SentInvitation {
 type Via = "link" | "email" | "phone";
 
 /** The private join link for an invitation, shown once right after it is created (or renewed). */
-function JoinLinkBox({ familyName, url, onClose }: { familyName: string; url: string; onClose: () => void }) {
+function JoinLinkBox({ familyName, url, email, onClose }: { familyName: string; url: string; email: string | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const message = `I've invited you to join "${familyName}" on FamilyGuard AI. Open this private link to join: ${url}\n\nYou decide if and when to share your location.`;
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
@@ -59,6 +59,12 @@ function JoinLinkBox({ familyName, url, onClose }: { familyName: string; url: st
           {copied ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
           {copied ? "Copied" : "Copy link"}
         </Button>
+        <a
+          href={`mailto:${email ? encodeURIComponent(email) : ""}?subject=${encodeURIComponent(`Join ${familyName} on FamilyGuard AI`)}&body=${encodeURIComponent(message)}`}
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/15 px-3 text-xs text-slate-200 hover:border-neon-cyan/60 hover:text-white"
+        >
+          <Mail className="h-3.5 w-3.5" aria-hidden="true" /> Send by email
+        </a>
         <a
           href={`https://wa.me/?text=${encodeURIComponent(message)}`}
           target="_blank"
@@ -102,7 +108,7 @@ export function InvitePanel({
   const [status, setStatus] = useState<{ tone: "safe" | "danger"; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [link, setLink] = useState<string | null>(null);
+  const [link, setLink] = useState<{ url: string; email: string | null } | null>(null);
 
   const roles = (["member", "guardian"] as const).filter((r) => canInviteAs(myRole, r));
   const joinUrl = (token: string) => `${window.location.origin}/join/${token}`;
@@ -129,7 +135,7 @@ export function InvitePanel({
     setLoading(false);
     if (!res.ok) return setStatus({ tone: "danger", text: res.message });
     form.reset();
-    setLink(joinUrl(res.data.joinToken));
+    setLink({ url: joinUrl(res.data.joinToken), email: "email" in parsed.data && parsed.data.email ? parsed.data.email : null });
     router.refresh();
   }
 
@@ -139,7 +145,8 @@ export function InvitePanel({
     const res = await api<{ joinToken: string }>(`/api/families/${familyId}/invitations/${id}/link`, { method: "POST" });
     setBusy(null);
     if (!res.ok) return setStatus({ tone: "danger", text: res.message });
-    setLink(joinUrl(res.data.joinToken));
+    const inv = invitations.find((i) => i.id === id);
+    setLink({ url: joinUrl(res.data.joinToken), email: inv?.inviteeEmail ?? null });
   }
 
   async function revoke(id: string) {
@@ -164,7 +171,7 @@ export function InvitePanel({
         description="Create a private link and send it on WhatsApp or SMS. They sign in, press Join, and then choose to share their location."
       />
       {status && <Notice tone={status.tone} className="mb-4">{status.text}</Notice>}
-      {link && <JoinLinkBox familyName={familyName} url={link} onClose={() => setLink(null)} />}
+      {link && <JoinLinkBox familyName={familyName} url={link.url} email={link.email} onClose={() => setLink(null)} />}
 
       <div role="tablist" aria-label="Invite by" className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-white/[0.04] p-1">
         {tabs.map(([key, label, Icon]) => (
