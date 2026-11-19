@@ -36,11 +36,16 @@ describe("nextZoneState (geofence hysteresis)", () => {
 describe("zone validation", () => {
   const ok = { name: "Home", kind: "home", lat: 12.97, lng: 77.59, radius: 150 };
   it("accepts a valid zone and defaults alerts on", () => {
-    expect(createZoneSchema.parse(ok)).toMatchObject({ alertsEnabled: true, notifyOnEnter: true, notifyOnExit: true });
+    expect(createZoneSchema.parse(ok)).toMatchObject({ alertsEnabled: true, notifyOnEnter: true, notifyOnExit: true, alarmOnExit: false, watchUids: [] });
+  });
+  it("allows large zones (e.g. 5 km around home) up to 50 km, and an alarm on leaving", () => {
+    expect(createZoneSchema.safeParse({ ...ok, radius: 5000, alarmOnExit: true }).success).toBe(true);
+    expect(createZoneSchema.safeParse({ ...ok, radius: 50_000 }).success).toBe(true);
+    expect(createZoneSchema.safeParse({ ...ok, watchUids: ["not valid!"] }).success).toBe(false);
   });
   it.each([
     { radius: 10 },
-    { radius: 9000 },
+    { radius: 60_000 },
     { radius: 100.5 },
     { lat: 95 },
     { kind: "secret-base" },

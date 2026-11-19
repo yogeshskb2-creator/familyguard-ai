@@ -150,7 +150,30 @@ export interface Geofence {
   alertsEnabled: boolean;
   notifyOnEnter: boolean;
   notifyOnExit: boolean;
+  /** Leaving raises a loud alarm for owners and guardians. */
+  alarmOnExit: boolean;
+  /** Members the zone applies to; empty = everyone. */
+  watchUids: string[];
   createdAt: number;
+}
+
+/** A raised "left the safe zone" alarm. Active until the person is back inside. */
+export interface ZoneAlarm {
+  id: string;
+  familyId: string;
+  familyName: string;
+  zoneId: string;
+  zoneName: string;
+  uid: string;
+  displayName: string;
+  lat: number;
+  lng: number;
+  /** Distance from the zone's centre when the alarm was raised. */
+  distanceM: number;
+  radius: number;
+  createdAt: number;
+  active: boolean;
+  acknowledgedBy: { uid: string; displayName: string; at: number }[];
 }
 
 export type NotificationKind =

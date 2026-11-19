@@ -204,7 +204,7 @@ export async function recordLocation(user: SessionUser, fix: LocationUpdate): Pr
 
     const loc = await tx.get(locRef(user.uid));
     // Safe zones: only those of families this person is sharing with (consent).
-    const zoneCtx = await loadZoneContext(tx, sharedWith);
+    const zoneCtx = await loadZoneContext(tx, sharedWith, user.uid);
     const lastHistory = loc.exists && loc.get("historyLastAt")
       ? { lat: loc.get("historyLastLat") as number, lng: loc.get("historyLastLng") as number, at: ms(loc.get("historyLastAt")) }
       : null;

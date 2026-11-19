@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { docIdSchema } from "@/lib/families/validation";
 import { ZONE_KINDS, ZONE_LIMITS } from "./zones";
 
 const zoneName = z
@@ -22,6 +23,10 @@ const zoneFields = {
   alertsEnabled: z.boolean(),
   notifyOnEnter: z.boolean(),
   notifyOnExit: z.boolean(),
+  /** Leaving raises a loud alarm for the family's owners and guardians. */
+  alarmOnExit: z.boolean(),
+  /** Members this zone applies to; empty = everyone in the family. */
+  watchUids: z.array(docIdSchema).max(ZONE_LIMITS.maxWatched).transform((a) => [...new Set(a)]),
 };
 
 export const createZoneSchema = z
@@ -30,6 +35,8 @@ export const createZoneSchema = z
     alertsEnabled: zoneFields.alertsEnabled.default(true),
     notifyOnEnter: zoneFields.notifyOnEnter.default(true),
     notifyOnExit: zoneFields.notifyOnExit.default(true),
+    alarmOnExit: zoneFields.alarmOnExit.default(false),
+    watchUids: zoneFields.watchUids.default([]),
   })
   .strict();
 
@@ -44,3 +51,5 @@ export const updateZoneSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update" });
 
 export type CreateZone = z.infer<typeof createZoneSchema>;
+/** What callers may pass: the newer fields are optional and default off / everyone. */
+export type CreateZoneInput = Omit<CreateZone, "alarmOnExit" | "watchUids"> & Partial<Pick<CreateZone, "alarmOnExit" | "watchUids">>;

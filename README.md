@@ -215,14 +215,16 @@ Known limits:
 
 ## Safe zones (geofencing)
 
-- Owners and guardians create zones (Home, School, Office, College or Other) with a radius from 50 m to 5 km. The centre can be set from your current position (used only to fill in the form), a member's shared location, or coordinates you type. Members can view zones but can't change them.
+- Owners and guardians create zones (Home, School, Office, College or Other) with a radius from 50 m to 50 km (quick picks: 200 m … 25 km). A zone applies to **everyone** or only to **chosen members**. The centre can be set from your current position (used only to fill in the form), a member's shared location, or coordinates you type. Members can view zones but can't change them.
 - **Zones are checked on the server, inside the same transaction that stores a location update**, and only for the families that person is **sharing with**. Zones of other families are never even loaded.
 - **Alerts don't fire on GPS noise:**
   - "Arrived" fires only when a position is clearly inside the zone.
   - "Left" fires only when a position is beyond the radius plus a buffer (25 m, or the fix's accuracy if larger).
   - Positions less precise than the zone itself are ignored.
   - Nobody gets "arrived" just because someone turned sharing on while already inside.
-- Each zone has its own switches: **Alerts**, **On arrival** and **On leaving**. Arrivals and departures are always logged to the family's activity feed. Notifications go to everyone in the family except the person who moved.
+- **Alarm when leaving** (per zone): when a watched member leaves, every owner and guardian gets a critical alarm. That is an app-wide red banner with a siren and vibration on every page, an urgent push that stays on screen, and the distance from the centre with a "Where" link. It rings until each of them presses **I've seen this**, and stops for everyone when the person is back inside (owners are told "X is back inside"). Turning the alarm off or deleting the zone silences open alarms. Alarms live in `zoneAlarms/` (server-only). Browsers only play sound after the page has been used once, so the banner offers **Turn on alarm sound** when needed.
+- The Safe Zones page shows, for each zone, who is inside or outside right now and how far away.
+- Each zone has its own switches: **Alerts**, **On arrival**, **On leaving** and **Alarm when leaving**. Arrivals and departures are always logged to the family's activity feed. Notifications go to everyone in the family except the person who moved.
 - **On the web, location only updates while FamilyGuard is open**, so arrivals can be reported late or missed. The page says so. The native Android app is the path to reliable geofencing.
 
 ## Notifications and push

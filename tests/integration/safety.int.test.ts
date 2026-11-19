@@ -3,7 +3,7 @@ import type { SessionUser } from "@/lib/auth/session";
 import { adminDb } from "@/lib/firebase/admin";
 import { listFamilyEvents } from "@/lib/families/events.server";
 import { createFamily, inviteMember, removeMember, respondToInvitation } from "@/lib/families/service.server";
-import { createZone, deleteZone, listZones, updateZone } from "@/lib/geofences/service.server";
+import { acknowledgeZoneAlarm, createZone, deleteZone, listMyZoneAlarms, listZones, updateZone } from "@/lib/geofences/service.server";
 import { recordLocation, startSharing, stopSharing } from "@/lib/location/service.server";
 import { listNotifications, markRead, unreadCount } from "@/lib/notifications/service.server";
 import {
@@ -250,5 +250,62 @@ describe("Notifications inbox", () => {
     expect(await unreadCount(bob.uid)).toBe(1);
     expect(await markRead(bob.uid, "all")).toBe(1);
     expect(await unreadCount(bob.uid)).toBe(0);
+  });
+});
+
+describe("Safe-zone alarms", () => {
+  // 5 km around home; 0.05° lat ≈ 5.6 km.
+  const FIVE_KM_OUT = fix(12.9716 + 0.05, 77.5946);
+  const zone = (over = {}) =>
+    createZone(ann, home, { name: "Home", kind: "home", ...HOME, radius: 5000, alertsEnabled: true, notifyOnEnter: true, notifyOnExit: true, alarmOnExit: true, ...over });
+
+  it("leaving raises an alarm for owners and guardians only, with the distance, until they see it", async () => {
+    await zone();
+    await startSharing(cat, { familyIds: [home], keepHistory: false, historyRetentionDays: 7 });
+    await recordLocation(cat, AT_HOME);
+    await recordLocation(cat, FIVE_KM_OUT);
+
+    const [alarm] = await listMyZoneAlarms(ann.uid);
+    expect(alarm).toMatchObject({ zoneName: "Home", displayName: "Cat", active: true, radius: 5000 });
+    expect(alarm!.distanceM).toBeGreaterThan(5000);
+    expect(await listMyZoneAlarms(bob.uid)).toHaveLength(1);
+    expect(await listMyZoneAlarms(cat.uid)).toEqual([]);
+    expect((await of(ann.uid, "geofence_exit"))[0]).toMatchObject({ title: "ALARM: Cat left Home", priority: "critical" });
+
+    await acknowledgeZoneAlarm(ann, alarm!.id);
+    expect(await listMyZoneAlarms(ann.uid)).toEqual([]);
+    expect(await listMyZoneAlarms(bob.uid)).toHaveLength(1); // bob hasn't seen it yet
+    await expectError(acknowledgeZoneAlarm(cat, alarm!.id), 404);
+  });
+
+  it("coming back inside clears the alarm and tells the owners", async () => {
+    await zone();
+    await startSharing(cat, { familyIds: [home], keepHistory: false, historyRetentionDays: 7 });
+    await recordLocation(cat, AT_HOME);
+    await recordLocation(cat, FIVE_KM_OUT);
+    await recordLocation(cat, FIVE_KM_OUT); // still out: no second alarm
+    expect(await listMyZoneAlarms(bob.uid)).toHaveLength(1);
+    await recordLocation(cat, AT_HOME);
+    expect(await listMyZoneAlarms(bob.uid)).toEqual([]);
+    expect((await of(ann.uid, "geofence_enter"))[0]).toMatchObject({ title: "Cat is back inside Home" });
+  });
+
+  it("a zone watching only some members ignores everyone else", async () => {
+    await zone({ watchUids: [bob.uid] });
+    await startSharing(cat, { familyIds: [home], keepHistory: false, historyRetentionDays: 7 });
+    await recordLocation(cat, AT_HOME);
+    await recordLocation(cat, FIVE_KM_OUT);
+    expect(await listMyZoneAlarms(ann.uid)).toEqual([]);
+    expect(await zoneAlerts(ann.uid)).toBe(0);
+    await expectError(zone({ watchUids: [eve.uid] }), 400, "not_member");
+  });
+
+  it("turning the alarm off silences alarms already ringing", async () => {
+    const z = await zone();
+    await startSharing(cat, { familyIds: [home], keepHistory: false, historyRetentionDays: 7 });
+    await recordLocation(cat, AT_HOME);
+    await recordLocation(cat, FIVE_KM_OUT);
+    await updateZone(ann, home, z.id, { alarmOnExit: false });
+    expect(await listMyZoneAlarms(ann.uid)).toEqual([]);
   });
 });
