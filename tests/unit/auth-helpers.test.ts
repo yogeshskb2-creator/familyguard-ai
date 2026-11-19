@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { authErrorMessage, AuthFlowError } from "@/lib/auth/errors";
 import { isSameOrigin } from "@/lib/auth/origin";
-import { safeRedirect } from "@/lib/auth/safe-redirect";
+import { safeRedirect, withNext } from "@/lib/auth/safe-redirect";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { passwordScore } from "@/components/auth/PasswordStrength";
 
@@ -67,5 +67,15 @@ describe("passwordScore", () => {
     expect(passwordScore("abc")).toBe(0);
     expect(passwordScore("abcdefgh")).toBe(1);
     expect(passwordScore("Abcdefgh1234!")).toBe(4);
+  });
+});
+
+describe("withNext (keeps the destination through sign-up and verification)", () => {
+  it("adds a safe next and leaves the default out", () => {
+    expect(withNext("/register", "/join/abc")).toBe("/register?next=%2Fjoin%2Fabc");
+    expect(withNext("/login", "/join/abc", "verified=1")).toBe("/login?verified=1&next=%2Fjoin%2Fabc");
+    expect(withNext("/login", "/dashboard")).toBe("/login");
+    expect(withNext("/login", undefined, "verified=1")).toBe("/login?verified=1");
+    expect(withNext("/login", "https://evil.example")).toBe("/login");
   });
 });

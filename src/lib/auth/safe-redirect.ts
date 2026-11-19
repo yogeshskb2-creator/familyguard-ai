@@ -15,3 +15,10 @@ export function safeRedirect(target: string | null | undefined, fallback = "/das
     return fallback;
   }
 }
+
+/** `/login` → `/login?next=/join/abc` so a sign-up or verification detour returns to where the user was going. */
+export function withNext(path: string, next: string | null | undefined, extra = ""): string {
+  const target = safeRedirect(next);
+  const params = [extra, target !== "/dashboard" ? `next=${encodeURIComponent(target)}` : ""].filter(Boolean).join("&");
+  return params ? `${path}?${params}` : path;
+}

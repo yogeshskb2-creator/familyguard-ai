@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Mail, Smartphone } from "lucide-react";
 import { Button, Input, Notice } from "@/components/ui";
 import { authErrorMessage } from "@/lib/auth/errors";
+import { withNext } from "@/lib/auth/safe-redirect";
 import { signInWithEmail } from "@/lib/auth/client";
 import { fieldErrors, loginSchema } from "@/lib/validation/auth";
 import { cn } from "@/lib/utils";
@@ -34,7 +35,7 @@ export function LoginForm({ next, notice }: { next: string; notice?: string }) {
     setLoading(true);
     try {
       const outcome = await signInWithEmail(parsed.data.email, parsed.data.password);
-      if (outcome.status === "verify_email") router.push("/verify-email");
+      if (outcome.status === "verify_email") router.push(withNext("/verify-email", next));
       else done();
     } catch (err) {
       setFormError(authErrorMessage(err));
@@ -104,7 +105,7 @@ export function LoginForm({ next, notice }: { next: string; notice?: string }) {
 
       <p className="text-center text-sm text-slate-400">
         New to FamilyGuard?{" "}
-        <Link href="/register" className="font-medium text-neon-cyan hover:underline">
+        <Link href={withNext("/register", next)} className="font-medium text-neon-cyan hover:underline">
           Create an account
         </Link>
       </p>

@@ -5,7 +5,7 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 import { adminAuth, isAdminConfigured } from "@/lib/firebase/admin";
 import { isFirebaseConfigured } from "@/lib/env";
 import { SESSION_COOKIE } from "./constants";
-import { safeRedirect } from "./safe-redirect";
+import { safeRedirect, withNext } from "./safe-redirect";
 
 export interface SessionUser {
   uid: string;
@@ -73,6 +73,6 @@ export async function requireViewer(nextPath?: string): Promise<Viewer> {
     const requested = nextPath ?? (await headers()).get("x-fg-pathname") ?? "/dashboard";
     redirect(`/login?next=${encodeURIComponent(safeRedirect(requested))}`);
   }
-  if (needsEmailVerification(user)) redirect("/verify-email");
+  if (needsEmailVerification(user)) redirect(withNext("/verify-email", nextPath ?? (await headers()).get("x-fg-pathname")));
   return { mode: "live", user };
 }
