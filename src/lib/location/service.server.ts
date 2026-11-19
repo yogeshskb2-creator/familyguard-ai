@@ -293,6 +293,45 @@ export async function deleteMyHistory(uid: string): Promise<number> {
   return deleted;
 }
 
+// ── Asking someone to share ────────────────────────────────
+
+/**
+ * A family member asks another member to share their location with this
+ * family. It only sends a notification; the other person still decides.
+ * Refused if they already share with this family.
+ */
+export async function requestLocationShare(user: SessionUser, familyId: string, targetUid: string): Promise<void> {
+  if (targetUid === user.uid) throw new FamilyError(400, "self", "You can't ask yourself.");
+  const outbox = new PushOutbox();
+  await db().runTransaction(async (tx) => {
+    outbox.reset();
+    const fam = await tx.get(db().collection("families").doc(familyId));
+    const memberIds = (fam.get("memberIds") as string[] | undefined) ?? [];
+    // Non-members get the same answer as a missing family.
+    if (!fam.exists || !memberIds.includes(user.uid)) throw new FamilyError(404, "not_found", "Not found.");
+    if (!memberIds.includes(targetUid)) throw new FamilyError(404, "not_member", "That person isn't in this family.");
+    const target = await tx.get(userRef(targetUid));
+    const consent = consentFromDoc(target.get("sharing"));
+    if (consent.active && consent.familyIds.includes(familyId)) {
+      throw new FamilyError(409, "already_sharing", "They already share their location with this family.");
+    }
+    const me = await tx.get(userRef(user.uid));
+    const name = (me.get("displayName") as string | undefined) ?? user.displayName ?? "A family member";
+    queueNotification(
+      tx,
+      targetUid,
+      {
+        kind: "sharing_request",
+        title: `${name} asked you to share your location`,
+        body: `With ${fam.get("name")}. You decide: open the family and press Share my location.`,
+        link: `/family/${familyId}`,
+      },
+      outbox,
+    );
+  });
+  await outbox.flush();
+}
+
 // ── Family views ───────────────────────────────────────────
 
 /** Members of a family with the locations they chose to share WITH THIS FAMILY. */

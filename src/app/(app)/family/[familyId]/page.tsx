@@ -6,6 +6,7 @@ import { FamilySettings } from "@/components/family/FamilySettings";
 import { InvitePanel } from "@/components/family/InvitePanel";
 import { MemberList } from "@/components/family/MemberList";
 import { FamilyLocationsCard } from "@/components/location/FamilyLocationsCard";
+import { ShareWithFamilyCard } from "@/components/location/ShareWithFamilyCard";
 import { Badge, Card, CardHeader, PageHeader } from "@/components/ui";
 import { requireViewer } from "@/lib/auth/session";
 import { FamilyError } from "@/lib/families/errors";
@@ -46,6 +47,7 @@ export default async function FamilyDetailPage({ params }: { params: Promise<{ f
       />
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-4">
+          <ShareWithFamilyCard familyId={family.id} familyName={family.name} />
           <FamilyLocationsCard familyId={family.id} myUid={viewer.user.uid} />
           <MemberList familyId={family.id} members={family.members} myUid={viewer.user.uid} myRole={family.myRole} />
           <Card>

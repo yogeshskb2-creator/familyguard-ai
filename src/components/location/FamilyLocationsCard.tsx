@@ -1,8 +1,10 @@
 "use client";
 
-import { ExternalLink, MapPinned, RefreshCcw } from "lucide-react";
+import { useState } from "react";
+import { BellRing, Check, ExternalLink, MapPinned, RefreshCcw } from "lucide-react";
 import { Avatar, Badge, Button, Card, CardHeader, Notice } from "@/components/ui";
 import { useFamilyLocations } from "@/hooks/useFamilyLocations";
+import { api } from "@/lib/api/client";
 import { formatAccuracy, googleMapsLink } from "@/lib/location/geo";
 import { timeAgo } from "@/lib/utils";
 
@@ -11,6 +13,14 @@ export function FamilyLocationsCard({ familyId, myUid }: { familyId: string; myU
   const { members, serverNow, error, loading, reload: load } = useFamilyLocations(familyId);
 
   const sharingCount = members?.filter((m) => m.sharing).length ?? 0;
+  const [asked, setAsked] = useState<Record<string, "busy" | "sent" | string>>({});
+
+  async function ask(uid: string) {
+    setAsked((a) => ({ ...a, [uid]: "busy" }));
+    const res = await api(`/api/families/${familyId}/members/${uid}/ask-location`, { method: "POST" });
+    setAsked((a) => ({ ...a, [uid]: res.ok ? "sent" : res.message }));
+    if (!res.ok && res.code === "already_sharing") load();
+  }
 
   return (
     <Card>
@@ -62,7 +72,31 @@ export function FamilyLocationsCard({ familyId, myUid }: { familyId: string; myU
                   </a>
                 </div>
               ) : (
-                <p className="mt-0.5 text-xs text-slate-500">Not sharing with this family</p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="text-slate-500">
+                    {m.uid === myUid ? "You aren't sharing with this family" : "Hasn't turned on location sharing yet"}
+                  </span>
+                  {m.uid !== myUid &&
+                    (asked[m.uid] === "sent" ? (
+                      <span className="inline-flex items-center gap-1 text-safe">
+                        <Check className="h-3 w-3" aria-hidden="true" /> Request sent
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        onClick={() => ask(m.uid)}
+                        loading={asked[m.uid] === "busy"}
+                        aria-label={`Ask ${m.displayName} to share their location`}
+                      >
+                        {asked[m.uid] !== "busy" && <BellRing className="h-3 w-3" aria-hidden="true" />} Ask to share
+                      </Button>
+                    ))}
+                  {asked[m.uid] && asked[m.uid] !== "busy" && asked[m.uid] !== "sent" && (
+                    <span className="w-full text-[#ff8399]">{asked[m.uid]}</span>
+                  )}
+                </div>
               )}
             </div>
           </li>

@@ -25,6 +25,7 @@ const ICON: Record<string, React.ReactNode> = {
   invitation: <UserPlus className="h-4 w-4 text-neon-cyan" />,
   sharing_started: <Radio className="h-4 w-4 text-neon-cyan" />,
   sharing_stopped: <MapPinOff className="h-4 w-4 text-slate-400" />,
+  sharing_request: <MapPin className="h-4 w-4 text-neon-cyan" />,
   device: <Smartphone className="h-4 w-4 text-[#c7a6ff]" />,
 };
 

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Check, MapPin, ShieldCheck, Users, X } from "lucide-react";
-import { useSharing } from "@/components/location/LocationSharingProvider";
+import { useShareWithFamily } from "@/components/location/useShareWithFamily";
 import { Badge, Button, Card, CardHeader, Notice } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { ROLE_LABEL } from "@/lib/families/permissions";
@@ -24,7 +24,7 @@ export interface JoinInvite {
  */
 export function JoinInvitation({ token, invite }: { token: string; invite: JoinInvite }) {
   const router = useRouter();
-  const sharing = useSharing();
+  const sharing = useShareWithFamily(invite.familyId);
   const [busy, setBusy] = useState<"accept" | "reject" | "share" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
@@ -42,15 +42,7 @@ export function JoinInvitation({ token, invite }: { token: string; invite: JoinI
   async function shareLocation() {
     setBusy("share");
     setError(null);
-    let ok: boolean;
-    if (sharing.consent.active) {
-      // Already sharing with other families: add this one, and make sure this device is sending.
-      const familyIds = [...new Set([...sharing.consent.familyIds, invite.familyId])];
-      ok = await sharing.update({ familyIds });
-      if (ok && sharing.status !== "live") await sharing.resume();
-    } else {
-      ok = await sharing.start({ familyIds: [invite.familyId], keepHistory: false, historyRetentionDays: 7 });
-    }
+    const ok = await sharing.share();
     setBusy(null);
     if (ok) router.push(`/family/${invite.familyId}`);
   }

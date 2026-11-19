@@ -12,7 +12,7 @@ export const CATEGORY_LABEL: Record<PushCategory, { title: string; hint: string 
   sos: { title: "Emergency SOS", hint: "Alerts from your family, and replies to your own SOS. Strongly recommended." },
   zones: { title: "Safe-zone arrivals & departures", hint: "When someone arrives at or leaves a safe zone." },
   invitations: { title: "Family invitations", hint: "When someone invites you to a family." },
-  sharing: { title: "Location sharing changes", hint: "When a family member starts or stops sharing with you." },
+  sharing: { title: "Location sharing changes", hint: "When a family member starts or stops sharing with you, or asks you to share." },
   devices: { title: "Security: your devices", hint: "When a device is added to or removed from your account." },
 };
 
@@ -20,7 +20,7 @@ export function categoryOf(kind: NotificationKind): PushCategory {
   if (kind === "sos") return "sos";
   if (kind === "geofence_enter" || kind === "geofence_exit") return "zones";
   if (kind === "invitation") return "invitations";
-  if (kind === "sharing_started" || kind === "sharing_stopped") return "sharing";
+  if (kind === "sharing_started" || kind === "sharing_stopped" || kind === "sharing_request") return "sharing";
   return "devices";
 }
 

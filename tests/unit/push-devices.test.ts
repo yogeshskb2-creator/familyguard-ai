@@ -55,6 +55,7 @@ describe("notification preferences", () => {
     expect(categoryOf("geofence_exit")).toBe("zones");
     expect(categoryOf("invitation")).toBe("invitations");
     expect(categoryOf("sharing_stopped")).toBe("sharing");
+    expect(categoryOf("sharing_request")).toBe("sharing");
     expect(categoryOf("device")).toBe("devices");
   });
   it("defaults everything on and ignores junk", () => {
