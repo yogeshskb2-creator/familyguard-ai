@@ -215,7 +215,7 @@ Known limits:
 
 ## Safe zones (geofencing)
 
-- Owners and guardians create zones (Home, School, Office, College or Other) with a radius from 50 m to 50 km (quick picks: 200 m … 25 km). A zone applies to **everyone** or only to **chosen members**. The centre can be set from your current position (used only to fill in the form), a member's shared location, or coordinates you type. Members can view zones but can't change them.
+- Owners and guardians create zones (Home, School, Office, College or Other) with a radius from 50 m to 50 km (quick picks: 200 m … 25 km). A zone applies to **everyone** or only to **chosen members**. The centre is chosen by **searching an address or landmark** (OpenStreetMap Nominatim, called from our server at ≤1 request/s with caching; "© OpenStreetMap contributors" is shown), from your current position (used only to fill in the form), or from a member's shared location. The chosen point is shown as a readable address with a "Check it on Google Maps" link. Typing coordinates is still possible under "Advanced". Members can view zones but can't change them.
 - **Zones are checked on the server, inside the same transaction that stores a location update**, and only for the families that person is **sharing with**. Zones of other families are never even loaded.
 - **Alerts don't fire on GPS noise:**
   - "Arrived" fires only when a position is clearly inside the zone.
