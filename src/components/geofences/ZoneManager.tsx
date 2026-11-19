@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Briefcase, Building2, CircleCheck, GraduationCap, Home, LocateFixed, MapPin, Plus, Radar, Siren, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
+import { Briefcase, Building2, CircleCheck, ExternalLink, Search, GraduationCap, Home, LocateFixed, MapPin, Plus, Radar, Siren, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
 import { LiveMap } from "@/components/map/LiveMap";
 import { Badge, Button, Card, CardHeader, ConfirmDialog, EmptyState, Input, Notice } from "@/components/ui";
 import { useFamilyLocations } from "@/hooks/useFamilyLocations";
@@ -10,8 +10,8 @@ import { api } from "@/lib/api/client";
 import { canManageInvites } from "@/lib/families/permissions";
 import { createZoneSchema } from "@/lib/geofences/validation";
 import { RADIUS_PRESETS, ZONE_KINDS, ZONE_LIMITS, formatRadius, watches } from "@/lib/geofences/zones";
-import { distanceMeters } from "@/lib/location/geo";
-import { placedMembers, type MemberLocationView } from "@/lib/location/map";
+import { distanceMeters, googleMapsLink } from "@/lib/location/geo";
+import { placedMembers, type MemberLocationView, type PlacedMember } from "@/lib/location/map";
 import { fieldErrors } from "@/lib/validation/auth";
 import { cn } from "@/lib/utils";
 import type { FamilyRole, Geofence, ZoneKind } from "@/types/models";
@@ -213,6 +213,188 @@ function ZoneRow({
   );
 }
 
+interface PlaceResult {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * "Where is this place?" without making anyone type coordinates: search an
+ * address, use where you are, or a member's shared location. Coordinates are
+ * still available under "Advanced".
+ */
+function CentrePicker({
+  lat,
+  lng,
+  label,
+  members,
+  error,
+  onPick,
+  onManual,
+}: {
+  lat: string;
+  lng: string;
+  label: string;
+  members: PlacedMember[];
+  error?: string;
+  onPick: (lat: number, lng: number, label: string) => void;
+  onManual: (lat: string, lng: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PlaceResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const chosen = lat !== "" && lng !== "" && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+
+  // Show a readable address for whatever point is chosen, so it can be checked.
+  useEffect(() => {
+    setAddress(null);
+    if (!chosen) return;
+    let stale = false;
+    const t = setTimeout(async () => {
+      const res = await api<{ place: PlaceResult | null }>(`/api/geocode?lat=${Number(lat)}&lng=${Number(lng)}`);
+      if (!stale && res.ok && res.data.place) setAddress(res.data.place.address);
+    }, 400);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
+  }, [lat, lng, chosen]);
+
+  async function search(e?: React.FormEvent | React.MouseEvent) {
+    e?.preventDefault();
+    setProblem(null);
+    if (query.trim().length < 3) return setProblem("Type at least 3 letters, e.g. your colony, school or landmark and city.");
+    setSearching(true);
+    const res = await api<{ places: PlaceResult[] }>(`/api/geocode?q=${encodeURIComponent(query.trim())}`);
+    setSearching(false);
+    if (!res.ok) return setProblem(res.message);
+    setResults(res.data.places);
+    if (res.data.places.length === 0) setProblem("No place found. Try adding the city name, or a nearby landmark.");
+  }
+
+  function useMyLocation() {
+    setProblem(null);
+    if (!("geolocation" in navigator) || !window.isSecureContext) return setProblem("Location isn't available in this browser.");
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        setLocating(false);
+        setResults(null);
+        onPick(p.coords.latitude, p.coords.longitude, "Where you are now");
+      },
+      (err) => {
+        setLocating(false);
+        setProblem(err.code === 1 ? "Location permission was denied. Allow it in the browser, or search for the place instead." : "Couldn't get your location. Try again or search for the place.");
+      },
+      { enableHighAccuracy: true, timeout: 15_000 },
+    );
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <p className="text-xs font-medium text-slate-300">Where is this place?</p>
+
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void search(e as unknown as React.FormEvent);
+            }}
+            placeholder="Search address, area or landmark"
+            aria-label="Search for a place"
+            className="h-10 w-full rounded-xl border border-white/10 bg-ink-900/70 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-neon-blue/30"
+          />
+        </div>
+        <Button type="button" size="md" variant="secondary" onClick={search} loading={searching}>
+          Search
+        </Button>
+      </div>
+
+      {results && results.length > 0 && (
+        <ul className="max-h-56 space-y-1 overflow-y-auto" aria-label="Search results">
+          {results.map((p, i) => (
+            <li key={`${p.lat},${p.lng},${i}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  onPick(p.lat, p.lng, p.name);
+                  setResults(null);
+                }}
+                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.06]"
+              >
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-neon-cyan" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-white">{p.name}</span>
+                  <span className="block truncate text-xs text-slate-500">{p.address}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-500">or</span>
+        <Button type="button" size="sm" variant="secondary" onClick={useMyLocation} loading={locating}>
+          {!locating && <LocateFixed className="h-3.5 w-3.5" aria-hidden="true" />} Where I am now
+        </Button>
+        {members.map((m) => (
+          <Button
+            key={m.uid}
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setResults(null);
+              onPick(m.location.lat, m.location.lng, `${m.displayName}'s location`);
+            }}
+          >
+            <UserRound className="h-3.5 w-3.5" aria-hidden="true" /> {m.displayName.split(" ")[0]}&apos;s location
+          </Button>
+        ))}
+      </div>
+
+      {problem && <p className="text-xs text-[#ff8399]">{problem}</p>}
+      {error && !chosen && <p role="alert" className="text-xs text-[#ff8399]">{error}</p>}
+
+      {chosen && (
+        <div className="flex items-start gap-2 rounded-lg bg-safe/10 p-2.5 text-sm">
+          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-safe" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="font-medium text-white">{label || "Selected place"}</p>
+            {address && <p className="text-xs text-slate-400">{address}</p>}
+            <a
+              href={googleMapsLink(Number(lat), Number(lng))}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-0.5 inline-flex items-center gap-1 text-xs text-neon-cyan hover:underline"
+            >
+              Check it on Google Maps <ExternalLink className="h-3 w-3" aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+      )}
+
+      <details className="text-xs text-slate-500">
+        <summary className="cursor-pointer hover:text-slate-300">Advanced: type coordinates</summary>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Input label="Latitude" inputMode="decimal" value={lat} onChange={(e) => onManual(e.target.value, lng)} />
+          <Input label="Longitude" inputMode="decimal" value={lng} onChange={(e) => onManual(lat, e.target.value)} />
+        </div>
+      </details>
+      <p className="text-[10px] text-slate-600">Place search © OpenStreetMap contributors</p>
+    </div>
+  );
+}
+
 function CreateZoneForm({ familyId, members, onCreated }: { familyId: string; members: MemberLocationView[]; onCreated: () => void }) {
   const sharing = placedMembers(members);
   const [alarmOnExit, setAlarmOnExit] = useState(true);
@@ -225,20 +407,7 @@ function CreateZoneForm({ familyId, members, onCreated }: { familyId: string; me
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ tone: "safe" | "danger" | "info"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-
-  function useMyLocation() {
-    setMsg(null);
-    if (!("geolocation" in navigator) || !window.isSecureContext) return setMsg({ tone: "danger", text: "Location isn't available in this browser." });
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        setLat(p.coords.latitude.toFixed(6));
-        setLng(p.coords.longitude.toFixed(6));
-        setMsg({ tone: "info", text: "Centre set to where you are now. (Used only to fill this form — nothing was shared.)" });
-      },
-      (e) => setMsg({ tone: "danger", text: e.code === 1 ? "Location permission was denied." : "Couldn't get your location." }),
-      { enableHighAccuracy: true, timeout: 15_000 },
-    );
-  }
+  const [centreLabel, setCentreLabel] = useState("");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -257,7 +426,7 @@ function CreateZoneForm({ familyId, members, onCreated }: { familyId: string; me
     });
     if (!parsed.success) {
       const f = fieldErrors(parsed.error);
-      if ((f.lat || f.lng) && (lat === "" || lng === "")) f.lat = "Choose a centre: your location, a member's, or coordinates";
+      if ((f.lat || f.lng) && (lat === "" || lng === "")) f.lat = "Choose where this place is: search for it, or use your or a member's location";
       return setErrors(f);
     }
     setErrors({});
@@ -268,6 +437,7 @@ function CreateZoneForm({ familyId, members, onCreated }: { familyId: string; me
     setName("");
     setLat("");
     setLng("");
+    setCentreLabel("");
     setMsg({ tone: "safe", text: `Safe zone “${parsed.data.name}” created.` });
     onCreated();
   }
@@ -302,6 +472,24 @@ function CreateZoneForm({ familyId, members, onCreated }: { familyId: string; me
           })}
         </div>
       </div>
+      <CentrePicker
+        lat={lat}
+        lng={lng}
+        label={centreLabel}
+        members={sharing}
+        error={errors.lat ?? errors.lng}
+        onPick={(la, ln, lbl) => {
+          setLat(la.toFixed(6));
+          setLng(ln.toFixed(6));
+          setCentreLabel(lbl);
+          setErrors((e) => ({ ...e, lat: "", lng: "" }));
+        }}
+        onManual={(la, ln) => {
+          setLat(la);
+          setLng(ln);
+          setCentreLabel(la && ln ? "Coordinates you typed" : "");
+        }}
+      />
       <div>
         <label htmlFor="zone-radius" className="mb-1.5 flex justify-between text-xs font-medium text-slate-300">
           Radius <span className="text-white">{radius >= 1000 ? `${(radius / 1000).toFixed(1)} km` : `${radius} m`}</span>
@@ -351,33 +539,6 @@ function CreateZoneForm({ familyId, members, onCreated }: { familyId: string; me
           </span>
         </span>
       </label>
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-slate-300">Centre</p>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="secondary" onClick={useMyLocation}>
-            <LocateFixed className="h-3.5 w-3.5" aria-hidden="true" /> Where I am now
-          </Button>
-          {sharing.map((m) => (
-            <Button
-              key={m.uid}
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setLat(m.location.lat.toFixed(6));
-                setLng(m.location.lng.toFixed(6));
-                setMsg({ tone: "info", text: `Centre set to ${m.displayName}'s current shared location.` });
-              }}
-            >
-              <UserRound className="h-3.5 w-3.5" aria-hidden="true" /> {m.displayName.split(" ")[0]}&apos;s location
-            </Button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Input label="Latitude" inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value)} error={errors.lat} />
-          <Input label="Longitude" inputMode="decimal" value={lng} onChange={(e) => setLng(e.target.value)} error={errors.lng} />
-        </div>
-      </div>
       <Button type="submit" loading={busy}>
         <Plus className="h-4 w-4" aria-hidden="true" /> Create safe zone
       </Button>
