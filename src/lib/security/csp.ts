@@ -5,6 +5,7 @@
  * Allowed origins and why:
  * - Firebase Auth/Firestore/FCM and Google Maps APIs: *.googleapis.com
  * - Google Maps tiles/scripts: maps.gstatic.com, *.ggpht.com, *.googleusercontent.com
+ * - OpenStreetMap tiles (map without a Google key): tile.openstreetmap.org — images only
  * - Google sign-in popup & reCAPTCHA: apis.google.com, www.google.com, www.gstatic.com,
  *   and the Firebase auth domain (iframe used by signInWithPopup)
  * - Emulators (development/E2E only): 127.0.0.1:9099 and :8080
@@ -22,7 +23,7 @@ export function buildCsp(opts: { authDomain?: string; emulators?: boolean; dev?:
     "default-src": "'self'",
     "script-src": `'self' 'unsafe-inline' 'unsafe-eval' blob: https://apis.google.com https://maps.googleapis.com https://maps.gstatic.com https://www.google.com https://www.gstatic.com`,
     "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "img-src": `'self' data: blob: ${google}`,
+    "img-src": `'self' data: blob: ${google} https://tile.openstreetmap.org`,
     "font-src": "'self' data: https://fonts.gstatic.com",
     "connect-src": `'self' ${google} https://*.firebaseio.com wss://*.firebaseio.com https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com ${emu}`,
     "frame-src": `'self' https://apis.google.com https://www.google.com https://recaptcha.google.com ${authOrigin} https://*.firebaseapp.com`,
